@@ -173,8 +173,8 @@ void InitializeLuaEnvironment(sol::state& lua) {
 
         spr.hitbox.position.x = j["bbox_left"];
         spr.hitbox.position.y = j["bbox_top"];
-        spr.hitbox.size.x = j["bbox_right"] - spr.hitbox.position.x + 1;
-        spr.hitbox.size.y = j["bbox_bottom"] - spr.hitbox.position.y + 1;
+        spr.hitbox.size.x = j["bbox_right"].get<float>() - spr.hitbox.position.x + 1.0f;
+        spr.hitbox.size.y = j["bbox_bottom"].get<float>() - spr.hitbox.position.y + 1.0f;
 
         // temp handling of frames:
         int frameCount = j["frames"];

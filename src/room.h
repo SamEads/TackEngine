@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include "object.h"
 #include "collision.h"
 

@@ -4,7 +4,7 @@
 #include <SFML/Graphics.hpp>
 #include "vendor/lua/sol2/sol.hpp"
 #include "sprite.h"
-#include "math.h"
+#include "mathhelper.h"
 
 class Room;
 
