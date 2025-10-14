@@ -31,9 +31,8 @@ void Object::endStep(Room* room) {
 }
 
 void Object::draw(Room* room) {
-	if (!runRoomScript("draw", room)) {
-		if (spriteIndex) {
-			spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
-		}
+	if (runRoomScript("draw", room) || !spriteIndex) {
+		return;
 	}
+	spriteIndex->draw(*Game::get().currentRenderer, { floorf(x), floorf(y) }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
 }

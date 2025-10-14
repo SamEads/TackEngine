@@ -1,0 +1,6 @@
+I am an auto-generated file created by GMConvert!
+
+All files added by GMConvert are also listed in managed.json so that the lifetimes can be managed.
+If an object is deleted / added in GM, it can be properly adjusted.
+
+WARNING!!!: You can add your own files to these folders, but if you put anything inside of a subdirectory (i.e., inside of a sprite folder), it has the possibility of being deleted when GMConvert is ran again!

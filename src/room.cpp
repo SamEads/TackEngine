@@ -86,6 +86,9 @@ void Room::update() {
         i->xPrev = i->x;
         i->yPrev = i->y;
         i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
+    }
+
+    for (auto& i : instances) {
         i->beginStep(this);
     }
     addQueue();

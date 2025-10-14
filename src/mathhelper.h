@@ -11,3 +11,7 @@ inline float Rad2Deg(float radian) {
 inline float Deg2Rad(float radian) {
     return radian * (M_PI / 180.0f);
 }
+
+inline float lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}

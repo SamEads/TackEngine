@@ -41,7 +41,7 @@ public:
     float xScale = 1.0f, yScale = 1.0f;
     float imageIndex = 0.0f;
     float imageSpeed = 0.0f;
-    float imageSpeedMod = 0.0f;
+    float imageSpeedMod = 1.0f;
     float imageAngle = 0.0f;
 
     SpriteIndex* spriteIndex = nullptr;
@@ -56,30 +56,36 @@ public:
     const inline float bboxLeft() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
-        const float hitboxLeft = spr->hitbox.position.x * xScale;
-        const float originX = spr->originX * xScale;
+        const float hitboxLeft = spr->hitbox.position.x * fabsf(xScale);
+        float originX = spr->originX * xScale;
+        if (xScale < 0) {
+            originX = (spr->width - spr->originX) * fabsf(xScale);
+        }
         return x + hitboxLeft - originX;
     }
 
     const inline float bboxRight() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
-        const float hitboxWidth = spr->hitbox.size.x * xScale;
+        const float hitboxWidth = spr->hitbox.size.x * fabsf(xScale);
         return bboxLeft() + hitboxWidth;
     }
 
     const inline float bboxTop() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
-        const float hitboxTop = spr->hitbox.position.y * yScale;
-        const float originY = spr->originY * yScale;
+        const float hitboxTop = spr->hitbox.position.y * fabsf(yScale);
+        float originY = spr->originY * yScale;
+        if (yScale < 0) {
+            originY = (spr->height - spr->originY) * fabsf(yScale);
+        }
         return y + hitboxTop - originY;
     }
 
     const inline float bboxBottom() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
-        const float hitboxHeight = spr->hitbox.size.y * yScale;
+        const float hitboxHeight = spr->hitbox.size.y * fabsf(yScale);
         return bboxTop() + hitboxHeight;
     }
 
@@ -128,7 +134,10 @@ public:
         }
 
         sf::FloatRect hb = {};
-        if (spriteIndex) {
+        if (maskIndex) {
+            hb = maskIndex->hitbox;
+        }
+        else if (spriteIndex) {
             hb = spriteIndex->hitbox;
         }
         sf::Vector2f unscaledCorners[4] = {
@@ -221,6 +230,7 @@ public:
     void draw(Room* room) override;
 };
 
+#include <deque>
 class ObjectManager {
 public:
     class ScriptedInfo {
@@ -248,6 +258,25 @@ public:
 
             if (it != list.end()) {
                 auto copied = it->second.create(object);
+
+                std::deque<Object*> parents;
+                Object* f = object->parent;
+                if (f) {
+                    while (true) {
+                        if (f) {
+                            parents.push_back(f);
+                            f = f->parent;
+                        }
+                        else break;
+                    }
+                    while (!parents.empty()) {
+                        Object* p = parents.front();
+                        parents.pop_front();
+                        for (auto& v : p->kvp) {
+                            copied->setDyn(v.first, v.second);
+                        }
+                    }
+                }
                 for (auto& v : object->kvp) {
                     copied->setDyn(v.first, v.second);
                 }

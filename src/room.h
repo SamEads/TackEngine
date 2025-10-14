@@ -66,7 +66,7 @@ public:
         for (auto& o : queuedDelete) {
             auto orig = std::find_if(instances.begin(), instances.end(), [o](const auto& unique) {
                 return unique.get() == o;
-                });
+            });
             if (orig != instances.end()) {
                 instances.erase(orig);
             }
@@ -79,9 +79,17 @@ public:
         ids.erase(id);
     }
 
-    void instanceDestroyScript(Object::Reference ref) {
-        queuedDelete.push_back(ids[ref.id]);
-        ids.erase(ref.id);
+    void instanceDestroyScript(sol::object obj) {
+        if (obj.is<Object::Reference>()) {
+            Object::Reference& ref = obj.as<Object::Reference>();
+            queuedDelete.push_back(ids[ref.id]);
+            ids.erase(ref.id);
+        }
+        else if (obj.is<Object*>()) {
+            Object* object = obj.as<Object*>();
+            queuedDelete.push_back(ids[object->id]);
+            ids.erase(object->id);
+        }
     }
 
     bool objectExists(Object* baseType) {
@@ -103,9 +111,30 @@ public:
         return ids.find(refId) != ids.end();
     }
 
-    Object::Reference collisionRectangleScript(Object* caller, float x1, float y1, float x2, float y2, sol::object type) {
+    std::vector<Object::Reference> collisionRectangleListScript(Object* caller, float x1, float y1, float x2, float y2, std::unique_ptr<Object>& type) {
+        if (type == nullptr) {
+            return {};
+        }
+
+        auto callerPts = caller->getPoints(x1, y1, x2, y2);
+
+        std::vector<Object::Reference> vec {};
+
+        for (auto& i : ids) {
+            if (i.second->extends(type.get())) {
+                auto answer = polygonsIntersect(callerPts, i.second->getPoints());
+                if (answer.intersect) {
+                    vec.push_back(i.second->makeReference());
+                }
+            }
+        }
+
+        return vec;
+    }
+
+    sol::object collisionRectangleScript(Object* caller, float x1, float y1, float x2, float y2, sol::object type) {
         if (type == sol::lua_nil) {
-            return Object::Reference{ -1, sol::make_object(lua, sol::lua_nil) };
+            return sol::make_object(lua, sol::lua_nil);
         }
 
         auto callerPts = caller->getPoints(x1, y1, x2, y2);
@@ -113,11 +142,11 @@ public:
         if (type.is<Object::Reference>()) {
             Object::Reference& r = type.as<Object::Reference>();
             if (!instanceExists(r)) {
-                return Object::Reference{ -1, sol::make_object(lua, sol::lua_nil) };
+                return sol::make_object(lua, Object::Reference{ -1, sol::make_object(lua, sol::lua_nil) });
             }
             auto answer = polygonsIntersect(callerPts, r.object.as<Object*>()->getPoints());
             if (answer.intersect) {
-                return r;
+                return type;
             }
         }
 
@@ -126,12 +155,12 @@ public:
             if (i.second->extends(baseType.get())) {
                 auto answer = polygonsIntersect(callerPts, i.second->getPoints());
                 if (answer.intersect) {
-                    return i.second->makeReference();
+                    return sol::make_object(lua, i.second->makeReference());
                 }
             }
         }
 
-        return Object::Reference{ -1, sol::make_object(lua, sol::lua_nil) };
+        return sol::make_object(lua, sol::lua_nil);
     }
 
     Object::Reference instancePlaceScript(Object* caller, float x, float y, sol::object type) {

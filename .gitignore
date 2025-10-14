@@ -3,3 +3,12 @@
 /src/vendor/lua/sol2
 /build
 .DS_Store
+/assets/objects
+/assets/rooms
+/assets/sprites
+/assets/tilesets
+/assets/scripts
+assets/gmconvert.lua
+assets/managed.json
+/assets/sounds
+.vscode/settings.json

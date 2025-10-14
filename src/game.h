@@ -5,6 +5,7 @@
 class Game {
 public:
     sf::RenderTarget* currentRenderer;
+    std::unique_ptr<sf::RenderTexture> consoleRenderer;
     std::unique_ptr<sf::RenderWindow> window;
     std::filesystem::path assetsFolder = "assets";
     static Game& get() {

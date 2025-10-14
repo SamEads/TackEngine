@@ -6,6 +6,7 @@
 #include "game.h"
 #include "room.h"
 #include "keys.h"
+#include "sound.h"
 
 using namespace nlohmann;
 
@@ -43,14 +44,19 @@ sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Ob
     return solObject;
 }
 
-inline void ObjectCreateRec(std::string identifier, sol::state& lua, const std::filesystem::path& assets) {
+static sol::object ObjectCreateRec(std::string identifier, sol::state& lua, const std::filesystem::path& assets) {
     // potentially a parent class-ignore
     ObjectManager& objMgr = ObjectManager::get();
     if (objMgr.baseClasses.find(identifier) != objMgr.baseClasses.end()) {
-        return;
+        return sol::object(sol::lua_nil);
     }
 
-    std::ifstream i(assets / "objects" / (identifier + ".json"));
+    std::filesystem::path p = assets / "objects" / (identifier + ".json");
+    if (!std::filesystem::exists(p)) {
+        return sol::object(sol::lua_nil);
+    }
+
+    std::ifstream i(p);
     json j = json::parse(i);
 
     sol::object objSol = sol::lua_nil;
@@ -68,20 +74,13 @@ inline void ObjectCreateRec(std::string identifier, sol::state& lua, const std::
     }
     std::unique_ptr<Object>& obj = objSol.as<std::unique_ptr<Object>&>();
 
-    std::filesystem::path corresponding = assets / "scripts" / (identifier + ".lua");
-    if (std::filesystem::exists(corresponding)) {
-        auto res = lua.safe_script_file(corresponding.string());
-        if (!res.valid()) {
-            sol::error e = res;
-            std::cout << e.what() << "\n";
-        }
-    }
-
     obj->visible = j["visible"];
 
     if (!j["sprite"].is_null()) {
         obj->spriteIndex = &SpriteManager::get().sprites.at(j["sprite"]);
     }
+
+    return objSol;
 }
 
 sf::Color MakeColor(sol::table c) {
@@ -96,7 +95,8 @@ void InitializeLuaEnvironment(sol::state& lua) {
     std::filesystem::path assets = Game::get().assetsFolder;
 
     lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::package, sol::lib::math, sol::lib::table);
-    lua["package"]["path"] = assets.string() + "scripts/?.lua";
+    std::filesystem::path scriptsPath = (std::filesystem::path(assets.string()) / "scripts" / "?.lua");
+    lua["package"]["path"] = scriptsPath.string();
 
     lua.new_usertype<Object>(
         "Object", sol::no_constructor,
@@ -105,18 +105,19 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "hspeed", &Object::xspd,
         "vspeed", &Object::yspd,
         "sprite_index", &Object::spriteIndex,
+        "mask_index", &Object::maskIndex,
         "image_index", &Object::imageIndex,
         "image_speed", &Object::imageSpeed,
         "image_angle", &Object::imageAngle,
-        "image_xscale", sol::readonly(&Object::xScale),
-        "image_yscale", sol::readonly(&Object::yScale),
+        "image_xscale", &Object::xScale,
+        "image_yscale", &Object::yScale,
         "xprevious", sol::readonly(&Object::xPrev),
         "yprevious", sol::readonly(&Object::yPrev),
         "bbox_left", sol::property(&Object::bboxLeft, &Object::trySet),
         "bbox_right", sol::property(&Object::bboxRight, &Object::trySet),
         "bbox_bottom", sol::property(&Object::bboxBottom, &Object::trySet),
         "bbox_top", sol::property(&Object::bboxTop, &Object::trySet),
-        "id", sol::property(&Object::makeReference, &Object::trySet),
+        "get_ref", &Object::makeReference,
         "depth", &Object::depth,
         "visible", &Object::visible,
         "extends", &Object::extends,
@@ -141,11 +142,14 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "Room", sol::no_constructor,
         "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
         "camera_y", sol::property(&Room::getCameraY, &Room::setCameraY),
+        "width", sol::readonly(&Room::width),
+        "height", sol::readonly(&Room::height),
         "instance_create", &Room::instanceCreateScript,
         "instance_exists", &Room::instanceExists,
         "object_exists", &Room::objectExists,
         "instance_place", &Room::instancePlaceScript,
         "collision_rectangle", &Room::collisionRectangleScript,
+        "collision_rectangle_list", &Room::collisionRectangleListScript,
         "instance_destroy", &Room::instanceDestroyScript
     );
 
@@ -186,25 +190,35 @@ void InitializeLuaEnvironment(sol::state& lua) {
         lua[identifier] = o;
     }
 
-    lua.set_function("object_create", [&lua](sol::table info) {
-        std::string identifier = info["name"];
-        sol::object toExtend = info["extends"];
-        if (toExtend != sol::lua_nil) {
-            return ObjectCreate(identifier, toExtend.as<std::unique_ptr<Object>&>(), lua);
+    lua["object_create"] = [&](const std::string& identifier, sol::object extendsMaybe) {
+        if (extendsMaybe.is<std::unique_ptr<Object>>()) {
+            return ObjectCreate(identifier, extendsMaybe.as<std::unique_ptr<Object>&>(), lua);
+
         }
-        else {
-            return ObjectCreate(identifier, nullptr, lua);
-        }
-    });
+        return ObjectCreate(identifier, nullptr, lua);
+    };
 
     // Load objects
     ObjectManager& objMgr = ObjectManager::get();
+    std::vector<std::string> objectsToRunLua;
     for (auto& it : std::filesystem::directory_iterator(assets / "objects")) {
         if (!it.is_regular_file()) {
             continue;
         }
         std::string identifier = it.path().filename().replace_extension("").string(); // okay then
         ObjectCreateRec(identifier, lua, assets);
+        objectsToRunLua.push_back(identifier);
+    }
+
+    for (auto& str : objectsToRunLua) {
+        std::filesystem::path corresponding = assets / "scripts" / "objects" / (str + ".lua");
+        if (std::filesystem::exists(corresponding)) {
+            auto res = lua.safe_script_file(corresponding.string());
+            if (!res.valid()) {
+                sol::error e = res;
+                std::cout << e.what() << "\n";
+            }
+        }
     }
 
     // Load tilesets
@@ -254,28 +268,48 @@ void InitializeLuaEnvironment(sol::state& lua) {
         Game::get().currentRenderer->draw(rs);
     };
 
+    lua["play_sound"] = [&](const std::string& path) {
+        SoundManager::get().play(path + ".wav");
+    };
+
     lua["gfx"]["draw_sprite"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y) {
         if (spriteIndex == nullptr) return;
-        spriteIndex->draw(*Game::get().currentRenderer, { floorf(x), floorf(y) }, imageIndex);
+        spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex);
     };
 
     lua["gfx"]["draw_sprite_ext"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float rot, sol::table color) {
         if (spriteIndex == nullptr) return;
-        spriteIndex->draw(*Game::get().currentRenderer, { floorf(x), floorf(y) }, imageIndex, { xscale, yscale }, MakeColor(color), rot);
+        spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex, { xscale, yscale }, MakeColor(color), rot);
     };
 }
 
+#define GMC_EMBEDDED
+#define GMCONVERT_IMPLEMENTATION
+#include "gmconvert.h"
+
 int main() {
     sol::state lua;
+
+    auto res = lua.safe_script_file("assets/gmconvert.lua");
+    if (!res.valid()) {
+        sol::error e = res;
+        std::cout << e.what() << "\n";
+    }
+    std::filesystem::path p = std::filesystem::path(lua["GM_project_directory"].get<std::string>());
+    GMConvert(p, "assets");
+
     InitializeLuaEnvironment(lua);
 
+
+    SoundManager& sndMgr = SoundManager::get();
+    sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 2, 224 * 2 }), "TackEngine");
     auto& window = Game::get().window;
     window->setFramerateLimit(60);
 
-    Game::get().currentRenderer = window.get();
+    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
 
-    Room r(lua, "rm_1_1_a");
+    Room r(lua, "rm_1_3");
     while (window->isOpen()) {
         while (const std::optional event = window->pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
@@ -287,9 +321,31 @@ int main() {
 
         r.update();
 
+        Game::get().currentRenderer = Game::get().consoleRenderer.get();
+        Game::get().consoleRenderer->clear();
+        r.draw();
+        Game::get().consoleRenderer->display();
+
         window->clear();
 
-        r.draw();
+        const auto dispSize = window->getSize();
+        sf::View view(sf::FloatRect{ { 0, 0 }, { (float)dispSize.x, (float)dispSize.y } });
+        view.setCenter({ dispSize.x / 2.0f, dispSize.y / 2.0f });
+        window->setView(view);
+
+        sf::Sprite renderSprite(Game::get().consoleRenderer->getTexture());
+
+        float scaleX = floorf(dispSize.x / (float)256);
+        float scaleY = floorf(dispSize.y / (float)224);
+        float scale = std::max(1.0f, std::min(scaleX, scaleY));
+
+        renderSprite.setScale({ scale, scale });
+
+        float offsetX = floorf((dispSize.x - (256 * scale)) / 2.f);
+        float offsetY = floorf((dispSize.y - (224 * scale)) / 2.f);
+        renderSprite.setPosition({ offsetX, offsetY });
+
+        window->draw(renderSprite);
 
         window->display();
     }
