@@ -9,6 +9,7 @@ class Tilemap : public Drawable {
 public:
     std::vector<unsigned int> tileData;
     int tileCountX, tileCountY;
+    std::string name;
     Tileset* tileset;
     void draw(Room* room) override;
 };
@@ -20,6 +21,7 @@ public:
     bool tiledX, tiledY;
     bool offsetX, offsetY;
     float x, y;
+    std::string name;
     sf::Color color = sf::Color::White;
     void draw(Room* room) override;
 };
@@ -106,6 +108,39 @@ public:
         return false;
     }
 
+    sol::object getTileLayer(const std::string& key) {
+        for (auto& m : tilemaps) {
+            if (m->name == key) {
+                Tilemap* ptr = m.get();
+                return sol::make_object(lua, ptr);
+            }
+        }
+        return sol::make_object(lua, sol::lua_nil);
+    }
+
+    sol::object getBackgroundLayer(const std::string& key) {
+        for (auto& bg : backgrounds) {
+            if (bg->name == key) {
+                return sol::make_object(lua, bg.get());
+            }
+        }
+        return sol::make_object(lua, sol::lua_nil);
+    }
+
+    sol::object getObject(Object* baseType) {
+        if (baseType == NULL) {
+            return sol::make_object(lua, sol::lua_nil);
+        }
+        auto it = std::find_if(ids.begin(), ids.end(), [baseType](const auto& o) {
+            Object* optr = o.second;
+            return optr->extends(baseType);
+        });
+        if (it != ids.end()) {
+            return sol::make_object(lua, it->second->makeReference());
+        }
+        return sol::make_object(lua, sol::lua_nil);
+    }
+
     bool instanceExists(Object::Reference reference) {
         int refId = reference.id;
         return ids.find(refId) != ids.end();
@@ -132,7 +167,7 @@ public:
         return vec;
     }
 
-    sol::object collisionRectangleScript(Object* caller, float x1, float y1, float x2, float y2, sol::object type) {
+    sol::object collisionRectangleScript(Object* caller, float x1, float y1, float x2, float y2, sol::object type, sol::variadic_args va) {
         if (type == sol::lua_nil) {
             return sol::make_object(lua, sol::lua_nil);
         }
@@ -150,12 +185,20 @@ public:
             }
         }
 
+        Object* ignore = nullptr;
+        if (va.size() > 0) {
+            if (va[0].get<bool>() == true) {
+                ignore = caller;
+            }
+        }
         auto& baseType = type.as<std::unique_ptr<Object>&>();
         for (auto& i : ids) {
             if (i.second->extends(baseType.get())) {
-                auto answer = polygonsIntersect(callerPts, i.second->getPoints());
-                if (answer.intersect) {
-                    return sol::make_object(lua, i.second->makeReference());
+                if (ignore == nullptr || i.second != ignore) {
+                    auto answer = polygonsIntersect(callerPts, i.second->getPoints());
+                    if (answer.intersect) {
+                        return sol::make_object(lua, i.second->makeReference());
+                    }
                 }
             }
         }

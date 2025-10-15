@@ -98,31 +98,41 @@ void InitializeLuaEnvironment(sol::state& lua) {
     std::filesystem::path scriptsPath = (std::filesystem::path(assets.string()) / "scripts" / "?.lua");
     lua["package"]["path"] = scriptsPath.string();
 
+    lua["math"]["sign"] = [](float number) {
+        if (number > 0) return 1;
+        if (number < 0) return -1;
+        return 0;
+    };
+
+    lua["math"]["point_distance"] = [](float x1, float y1, float x2, float y2) {
+        return PointDistance(x1, y1, x2, y2);
+    };
+
     lua.new_usertype<Object>(
-        "Object", sol::no_constructor,
-        "x", &Object::x,
-        "y", &Object::y,
-        "hspeed", &Object::xspd,
-        "vspeed", &Object::yspd,
+        "Object",       sol::no_constructor,
+        "x",            &Object::x,
+        "y",            &Object::y,
+        "hspeed",       &Object::xspd,
+        "vspeed",       &Object::yspd,
         "sprite_index", &Object::spriteIndex,
-        "mask_index", &Object::maskIndex,
-        "image_index", &Object::imageIndex,
-        "image_speed", &Object::imageSpeed,
-        "image_angle", &Object::imageAngle,
+        "mask_index",   &Object::maskIndex,
+        "image_index",  &Object::imageIndex,
+        "image_speed",  &Object::imageSpeed,
+        "image_angle",  &Object::imageAngle,
         "image_xscale", &Object::xScale,
         "image_yscale", &Object::yScale,
-        "xprevious", sol::readonly(&Object::xPrev),
-        "yprevious", sol::readonly(&Object::yPrev),
-        "bbox_left", sol::property(&Object::bboxLeft, &Object::trySet),
-        "bbox_right", sol::property(&Object::bboxRight, &Object::trySet),
-        "bbox_bottom", sol::property(&Object::bboxBottom, &Object::trySet),
-        "bbox_top", sol::property(&Object::bboxTop, &Object::trySet),
-        "get_ref", &Object::makeReference,
-        "depth", &Object::depth,
-        "visible", &Object::visible,
-        "extends", &Object::extends,
-        sol::meta_function::index, &Object::getDyn,
-        sol::meta_function::new_index, &Object::setDyn
+        "xprevious",    sol::readonly(&Object::xPrev),
+        "yprevious",    sol::readonly(&Object::yPrev),
+        "bbox_left",    sol::property(&Object::bboxLeft, &Object::trySet),
+        "bbox_right",   sol::property(&Object::bboxRight, &Object::trySet),
+        "bbox_bottom",  sol::property(&Object::bboxBottom, &Object::trySet),
+        "bbox_top",     sol::property(&Object::bboxTop, &Object::trySet),
+        "get_id",      &Object::makeReference,
+        "depth",        &Object::depth,
+        "visible",      &Object::visible,
+        "extends",      &Object::extends,
+        sol::meta_function::index,      &Object::getDyn,
+        sol::meta_function::new_index,  &Object::setDyn
     );
 
     lua.new_usertype<Object::Reference>(
@@ -138,6 +148,16 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "width", sol::readonly(&SpriteIndex::width)
     );
 
+    lua.new_usertype<Tilemap>(
+        "Tilemap", sol::no_constructor,
+        "visible", &Tilemap::visible
+    );
+
+    lua.new_usertype<Background>(
+        "Background", sol::no_constructor,
+        "visible", &Background::visible
+    );
+
     lua.new_usertype<Room>(
         "Room", sol::no_constructor,
         "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
@@ -147,6 +167,9 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "instance_create", &Room::instanceCreateScript,
         "instance_exists", &Room::instanceExists,
         "object_exists", &Room::objectExists,
+        "object_get", &Room::getObject,
+        "tile_layer_get", &Room::getTileLayer,
+        "background_layer_get", &Room::getBackgroundLayer,
         "instance_place", &Room::instancePlaceScript,
         "collision_rectangle", &Room::collisionRectangleScript,
         "collision_rectangle_list", &Room::collisionRectangleListScript,
@@ -290,26 +313,32 @@ void InitializeLuaEnvironment(sol::state& lua) {
 int main() {
     sol::state lua;
 
+    std::cout << "1\n";
+
     auto res = lua.safe_script_file("assets/gmconvert.lua");
     if (!res.valid()) {
         sol::error e = res;
         std::cout << e.what() << "\n";
     }
+    std::cout << "2\n";
+
     std::filesystem::path p = std::filesystem::path(lua["GM_project_directory"].get<std::string>());
     GMConvert(p, "assets");
+    std::cout << "3\n";
 
     InitializeLuaEnvironment(lua);
-
+    std::cout << "4\n";
 
     SoundManager& sndMgr = SoundManager::get();
     sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 2, 224 * 2 }), "TackEngine");
     auto& window = Game::get().window;
     window->setFramerateLimit(60);
+    std::cout << "5\n";
 
     Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
 
-    Room r(lua, "rm_1_3");
+    Room r(lua, "rm_2_1_a");
     while (window->isOpen()) {
         while (const std::optional event = window->pollEvent()) {
             if (event->is<sf::Event::Closed>()) {

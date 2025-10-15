@@ -37,14 +37,6 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
                 obj->imageIndex = i["image_index"];
                 obj->imageSpeedMod = i["image_speed"];
 
-                auto it = obj->kvp.find("create");
-                if (it != obj->kvp.end()) {
-                    auto res = it->second.as<sol::safe_function>()(obj, this);
-                    if (!res.valid()) {
-                        sol::error e = res;
-                        std::cout << e.what() << "\n";
-                    }
-                }
                 obj->xPrev = obj->x;
                 obj->yPrev = obj->y;
             }
@@ -59,6 +51,7 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
             bg->y = l["y"];
             bg->visible = l["visible"];
             bg->depth = depth;
+            bg->name = l["name"];
             if (!l["sprite"].is_null()) {
                 bg->spriteIndex = &SpriteManager::get().sprites[l["sprite"]];
             }
@@ -74,9 +67,23 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
             map->tileCountX = l["width"];
             map->tileCountY = l["height"];
             map->visible = l["visible"];
+            map->name = l["name"];
             map->tileData = l["tiles"].get<std::vector<unsigned int>>();
             map->tileset = &TilesetManager::get().tilesets[l["tileset"].get<std::string>()];
             tilemaps.push_back(std::move(map));
+        }
+    }
+
+    addQueue();
+    for (auto& objUnique : instances) {
+        auto it = objUnique->kvp.find("create");
+        if (it != objUnique->kvp.end()) {
+            Object* obj = objUnique.get();
+            auto res = it->second.as<sol::safe_function>()(obj, this);
+            if (!res.valid()) {
+                sol::error e = res;
+                std::cout << e.what() << "\n";
+            }
         }
     }
 }

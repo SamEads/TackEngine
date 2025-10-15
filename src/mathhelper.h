@@ -15,3 +15,7 @@ inline float Deg2Rad(float radian) {
 inline float lerp(float a, float b, float t) {
     return a + (b - a) * t;
 }
+
+inline float PointDistance(float x1, float y1, float x2, float y2) {
+    return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2) * 1.0);
+}

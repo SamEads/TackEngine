@@ -507,14 +507,17 @@ public:
 	std::vector<int32_t> tileData;
 	std::string tileset;
 	int serializeWidth, serializeHeight;
+	const int nilValue = -2147483648;
 	void decompressTiles(json& compData) {
 		tileData.clear();
 		tileData.reserve(serializeWidth * serializeHeight);
 		auto v = compData.get<std::vector<int>>();
 		int size = v.size();
+
+
 		for (int i = 0; i < size;) {
 			int value = v[i++];
-			if (value == -2147483648) { // nil tile
+			if (value == nilValue) { // nil tile
 				value = 0;
 			}
 
@@ -527,7 +530,7 @@ public:
 					}
 
 					int nextValue = v[i++];
-					if (nextValue == -2147483648) { // nil tile
+					if (nextValue == nilValue) { // nil tile
 						nextValue = 0;
 					}
 
@@ -549,7 +552,7 @@ public:
 				}
 
 				int repeatValue = v[i++];
-				if (repeatValue == -2147483648) { // nil tile
+				if (repeatValue == nilValue) { // nil tile
 					repeatValue = 0;
 				}
 
@@ -573,6 +576,11 @@ public:
 
 		if (tData.find("TileDataFormat") == tData.end()) {
 			tileData = tData["TileSerialiseData"].get<std::vector<int32_t>>();
+			for (auto& t : tileData) {
+				if (t == nilValue) {
+					t = 0;
+				}
+			}
 		}
 		else {
 			auto& compData = tData["TileCompressedData"];
@@ -835,11 +843,6 @@ void GameMakerProject::parse() {
 	}
 	std::ofstream managedObjects(assetsPath / "managed.json");
 	managedObjects << std::setw(4) << j;
-
-	std::ofstream info(assetsPath / "about_assets.txt");
-	info << "I am an auto-generated file created by GMConvert!\n\nAll files added by GMConvert are also listed in managed.json so that the lifetimes can be managed.\n"
-		<< "If an object is deleted / added in GM, it can be properly adjusted."
-		<< "\n\nWARNING!!!: You can add your own files to these folders, but if you put anything inside of a subdirectory (i.e., inside of a sprite folder), it has the possibility of being deleted when GMConvert is ran again!";
 
 	auto end = std::chrono::high_resolution_clock::now();
 
