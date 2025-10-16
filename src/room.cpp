@@ -69,6 +69,7 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
             map->visible = l["visible"];
             map->name = l["name"];
             map->tileData = l["tiles"].get<std::vector<unsigned int>>();
+            int pos = 0;
             map->tileset = &TilesetManager::get().tilesets[l["tileset"].get<std::string>()];
             tilemaps.push_back(std::move(map));
         }
@@ -76,15 +77,12 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
 
     addQueue();
     for (auto& objUnique : instances) {
-        auto it = objUnique->kvp.find("create");
-        if (it != objUnique->kvp.end()) {
-            Object* obj = objUnique.get();
-            auto res = it->second.as<sol::safe_function>()(obj, this);
-            if (!res.valid()) {
-                sol::error e = res;
-                std::cout << e.what() << "\n";
-            }
-        }
+        objUnique->runScript("create", this);
+    }
+
+    addQueue();
+    for (auto& objUnique : instances) {
+        objUnique->runScript("room_start", this);
     }
 }
 
@@ -203,12 +201,17 @@ void Tilemap::draw(Room* room) {
 
     SpriteIndex* spriteIndex = tileset->spriteIndex;
     sf::Sprite* s = spriteIndex->sprite.get();
+    float halfWidth = tileWidth / 2;
+    float halfHeight = tileHeight / 2;
     s->setScale({ 1, 1 });
-    s->setOrigin({ 0, 0 });
+    s->setOrigin({ halfWidth, halfHeight });
     s->setRotation(sf::degrees(0));
     s->setColor({ 255, 255, 255, 255 });
     auto target = Game::get().currentRenderer;
 
+
+    static int timer = 0;
+    timer++;
     int totalTiles = tileData.size();
     for (int xx = thisCx; xx < fullW; ++xx) {
         for (int yy = thisCy; yy < fullH; ++yy) {
@@ -218,19 +221,36 @@ void Tilemap::draw(Room* room) {
             }
 
             int tile = tileData[pos];
-            if (tile == 0) {
+            int mask = (1 << 19) - 1;
+            if (tile & mask == 0) {
                 continue;
             }
+            
+            bool mirror = (tile & (1 << 28));
+            bool flip = (tile & (1 << 29));
+            bool rotate = (tile & (1 << 30));
+            tile = tile & mask;
 
             int tileX = tile % tileset->tileCountX;
             int tileY = tile / tileset->tileCountX;
 
+            float scaleX = (mirror) ? -1 : 1;
+            float scaleY = (flip) ? -1 : 1;
+            
+            if (rotate) {
+                s->setRotation(sf::degrees(90));
+            }
+            s->setScale({ scaleX, scaleY }); 
             s->setTextureRect(sf::IntRect(
                 { tileX * (int)tileWidth + (tileX * tileset->separationX), tileY * (int)tileHeight + (tileY * tileset->separationY) },
                 { (int)tileWidth, (int)tileHeight }
             ));
-            s->setPosition({ floorf(xx * (float)tileWidth), floorf(yy * (float)tileHeight) });
+            s->setPosition({ floorf(xx * (float)tileWidth) + halfWidth, floorf(yy * (float)tileHeight) + halfHeight });
+
             target->draw(*s);
+            if (rotate) {
+                s->setRotation(sf::degrees(0));
+            }
         }
     }
 }

@@ -82,16 +82,22 @@ public:
     }
 
     void instanceDestroyScript(sol::object obj) {
+        Object* object = nullptr;
+
         if (obj.is<Object::Reference>()) {
             Object::Reference& ref = obj.as<Object::Reference>();
-            queuedDelete.push_back(ids[ref.id]);
-            ids.erase(ref.id);
+            object = ref.object.as<Object*>();
         }
         else if (obj.is<Object*>()) {
-            Object* object = obj.as<Object*>();
-            queuedDelete.push_back(ids[object->id]);
-            ids.erase(object->id);
+            object = obj.as<Object*>();
         }
+        else {
+            return;
+        }
+
+        object->runScript("destroy", this);
+        queuedDelete.push_back(ids[object->id]);
+        ids.erase(object->id);
     }
 
     bool objectExists(Object* baseType) {

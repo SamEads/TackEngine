@@ -10,7 +10,7 @@
 
 using namespace nlohmann;
 
-sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Object>& extends, sol::state& lua) {
+sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Object>& extends, sol::state& lua, const std::filesystem::path& assets) {
     auto& objMgr = ObjectManager::get();
     auto& baseClasses = objMgr.baseClasses;
 
@@ -22,7 +22,6 @@ sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Ob
 
     if (extends != nullptr) {
         newObject->parent = extends.get();
-
         for (std::pair p : extends->kvp) {
             newObject->kvp.insert(p);
         }
@@ -41,10 +40,21 @@ sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Ob
     sol::object solObject = lua[identifier];
     memPtr->self = memPtr.get();
     memPtr->identifier = identifier;
+
+    std::filesystem::path corresponding = assets / "scripts" / "objects" / (identifier + ".lua");
+    if (std::filesystem::exists(corresponding)) {
+        auto res = lua.safe_script_file(corresponding.string());
+        if (!res.valid()) {
+            sol::error e = res;
+            std::cout << e.what() << "\n";
+        }
+    }
+
     return solObject;
 }
 
 static sol::object ObjectCreateRec(std::string identifier, sol::state& lua, const std::filesystem::path& assets) {
+    std::cout << "Object create: " << identifier << "\n";
     // potentially a parent class-ignore
     ObjectManager& objMgr = ObjectManager::get();
     if (objMgr.baseClasses.find(identifier) != objMgr.baseClasses.end()) {
@@ -62,15 +72,17 @@ static sol::object ObjectCreateRec(std::string identifier, sol::state& lua, cons
     sol::object objSol = sol::lua_nil;
 
     if (!j["parent"].is_null()) {
-        auto it = objMgr.baseClasses.find(j["parent"]);
+        std::string parentIdentifier = j["parent"];
+        auto it = objMgr.baseClasses.find(parentIdentifier);
+        std::cout << "Extend " << identifier << " from " << parentIdentifier << "\n";
         if (it == objMgr.baseClasses.end()) {
-            ObjectCreateRec(j["parent"], lua, assets);
+            ObjectCreateRec(parentIdentifier, lua, assets);
         }
-        auto& parentObj = objMgr.baseClasses.at(j["parent"]).object.as<std::unique_ptr<Object>&>();
-        objSol = ObjectCreate(identifier, parentObj, lua);
+        std::unique_ptr<Object>& parentObj = objMgr.baseClasses.at(parentIdentifier).object.as<std::unique_ptr<Object>&>();
+        objSol = ObjectCreate(identifier, parentObj, lua, assets);
     }
     else {
-        objSol = ObjectCreate(identifier, nullptr, lua);
+        objSol = ObjectCreate(identifier, nullptr, lua, assets);
     }
     std::unique_ptr<Object>& obj = objSol.as<std::unique_ptr<Object>&>();
 
@@ -150,30 +162,41 @@ void InitializeLuaEnvironment(sol::state& lua) {
 
     lua.new_usertype<Tilemap>(
         "Tilemap", sol::no_constructor,
-        "visible", &Tilemap::visible
+        "visible", &Tilemap::visible,
+        "depth", &Tilemap::depth
     );
 
     lua.new_usertype<Background>(
         "Background", sol::no_constructor,
-        "visible", &Background::visible
+        "visible", &Background::visible,
+        "depth", &Background::depth,
+        "sprite_index", &Background::spriteIndex
     );
 
     lua.new_usertype<Room>(
         "Room", sol::no_constructor,
-        "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
-        "camera_y", sol::property(&Room::getCameraY, &Room::setCameraY),
+
+        // Room info
         "width", sol::readonly(&Room::width),
         "height", sol::readonly(&Room::height),
+        "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
+        "camera_y", sol::property(&Room::getCameraY, &Room::setCameraY),
+
+        // Objects & instances
         "instance_create", &Room::instanceCreateScript,
         "instance_exists", &Room::instanceExists,
+        "instance_destroy", &Room::instanceDestroyScript,
         "object_exists", &Room::objectExists,
         "object_get", &Room::getObject,
+
+        // Layers
         "tile_layer_get", &Room::getTileLayer,
         "background_layer_get", &Room::getBackgroundLayer,
+
+        // Collisions
         "instance_place", &Room::instancePlaceScript,
         "collision_rectangle", &Room::collisionRectangleScript,
-        "collision_rectangle_list", &Room::collisionRectangleListScript,
-        "instance_destroy", &Room::instanceDestroyScript
+        "collision_rectangle_list", &Room::collisionRectangleListScript
     );
 
     // Load sprites
@@ -215,10 +238,10 @@ void InitializeLuaEnvironment(sol::state& lua) {
 
     lua["object_create"] = [&](const std::string& identifier, sol::object extendsMaybe) {
         if (extendsMaybe.is<std::unique_ptr<Object>>()) {
-            return ObjectCreate(identifier, extendsMaybe.as<std::unique_ptr<Object>&>(), lua);
+            return ObjectCreate(identifier, extendsMaybe.as<std::unique_ptr<Object>&>(), lua, assets);
 
         }
-        return ObjectCreate(identifier, nullptr, lua);
+        return ObjectCreate(identifier, nullptr, lua, assets);
     };
 
     // Load objects
@@ -233,6 +256,8 @@ void InitializeLuaEnvironment(sol::state& lua) {
         objectsToRunLua.push_back(identifier);
     }
 
+    // Run object lua scripts
+    /*
     for (auto& str : objectsToRunLua) {
         std::filesystem::path corresponding = assets / "scripts" / "objects" / (str + ".lua");
         if (std::filesystem::exists(corresponding)) {
@@ -243,6 +268,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
             }
         }
     }
+    */
 
     // Load tilesets
     TilesetManager& tsMgr = TilesetManager::get();

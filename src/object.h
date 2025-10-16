@@ -18,10 +18,23 @@ public:
 using ObjectId = int;
 class Object;
 class Object : public Drawable {
-private:
-    bool runRoomScript(const std::string& script, Room* room);
-
 public:
+    template <typename ... Args>
+    bool runScript(const std::string& script, Args... args) {
+        auto step = kvp.find(script);
+        if (step != kvp.end()) {
+            auto res = step->second.as<sol::safe_function>()(this, args...);
+            if (!res.valid()) {
+                sol::error e = res;
+                std::cout << e.what() << "\n";
+            }
+            else {
+                return true;
+            }
+        }
+        return false;
+    }
+
     ObjectId id;
 
     struct Reference {
