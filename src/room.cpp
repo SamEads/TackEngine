@@ -143,19 +143,16 @@ void Room::draw(float alpha) {
     for (auto& bg : backgrounds) {
         if (bg->visible) {
             drawables.push_back(bg.get());
-            bg->draw(this, alpha);
         }
     }
     for (auto& tm : tilemaps) {
         if (tm->visible) {
             drawables.push_back(tm.get());
-            tm->draw(this, alpha);
         }
     }
     for (auto& i : instances) {
         if (i->visible) {
             drawables.push_back(i.get());
-            i->draw(this, alpha);
         }
     }
 
