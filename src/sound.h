@@ -6,6 +6,12 @@
 #include <thread>
 #include <mutex>
 
+class ScriptSound {
+public:
+	std::filesystem::path file;
+	float volume = 1.0f;
+};
+
 class SoundManager {
 public:
 	class SoundData {
@@ -36,6 +42,7 @@ public:
 	void fadeOut(std::string sound, float seconds);
 	void update();
 	void shutdown();
+	bool isPlaying(std::string sound);
 
     static SoundManager& get() {
         static SoundManager sndMgr;

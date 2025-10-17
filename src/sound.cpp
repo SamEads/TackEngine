@@ -65,11 +65,29 @@ void SoundManager::shutdown() {
 	}
 }
 
+bool SoundManager::isPlaying(std::string sound) {
+	std::lock_guard<std::mutex> s(mutex);
+
+	auto it = sounds.find(sound);
+	if (sounds.find(sound) != sounds.end()) {
+		auto& vec = (*it).second.sounds;
+		for (auto& sound : vec) {
+			float volume = sound.sound->getVolume();
+			bool status = sound.sound->getStatus() == sf::Sound::Status::Playing;
+			if (status && volume > 0) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 void SoundManager::play(std::string sound, float pitch, float volume, bool loop) {
 	std::lock_guard<std::mutex> s(mutex);
 
 	if (sounds.find(sound) == sounds.end()) {
-		bool loadedSound = sounds[sound].buffer.loadFromFile("assets/sounds/" + sound);
+		bool loadedSound = sounds[sound].buffer.loadFromFile(std::filesystem::path("assets") / "sounds" / sound);
 	}
 
 	auto& buf = sounds[sound].buffer;

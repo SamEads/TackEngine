@@ -6,11 +6,17 @@
 #include "game.h"
 #include "room.h"
 #include "keys.h"
+#include "utility/timer.h"
 #include "sound.h"
 
 using namespace nlohmann;
 
-sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Object>& extends, sol::state& lua, const std::filesystem::path& assets) {
+sol::object ObjectCreate(
+    const std::string& identifier,
+    const std::unique_ptr<Object>& extends,
+    sol::state& lua, const std::filesystem::path& assets,
+    const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths)
+{
     auto& objMgr = ObjectManager::get();
     auto& baseClasses = objMgr.baseClasses;
 
@@ -41,9 +47,10 @@ sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Ob
     memPtr->self = memPtr.get();
     memPtr->identifier = identifier;
 
-    std::filesystem::path corresponding = assets / "scripts" / "objects" / (identifier + ".lua");
-    if (std::filesystem::exists(corresponding)) {
-        auto res = lua.safe_script_file(corresponding.string());
+    // Run script for object
+    auto it = objectScriptPaths.find(identifier);
+    if (it != objectScriptPaths.end()) {
+        auto res = lua.safe_script_file(it->second.string());
         if (!res.valid()) {
             sol::error e = res;
             std::cout << e.what() << "\n";
@@ -53,8 +60,12 @@ sol::object ObjectCreate(const std::string& identifier, const std::unique_ptr<Ob
     return solObject;
 }
 
-static sol::object ObjectCreateRec(std::string identifier, sol::state& lua, const std::filesystem::path& assets) {
-    std::cout << "Object create: " << identifier << "\n";
+static sol::object ObjectCreateRec(
+    std::string identifier,
+    sol::state& lua,
+    const std::filesystem::path& assets,
+    const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths)
+{
     // potentially a parent class-ignore
     ObjectManager& objMgr = ObjectManager::get();
     if (objMgr.baseClasses.find(identifier) != objMgr.baseClasses.end()) {
@@ -74,15 +85,14 @@ static sol::object ObjectCreateRec(std::string identifier, sol::state& lua, cons
     if (!j["parent"].is_null()) {
         std::string parentIdentifier = j["parent"];
         auto it = objMgr.baseClasses.find(parentIdentifier);
-        std::cout << "Extend " << identifier << " from " << parentIdentifier << "\n";
         if (it == objMgr.baseClasses.end()) {
-            ObjectCreateRec(parentIdentifier, lua, assets);
+            ObjectCreateRec(parentIdentifier, lua, assets, objectScriptPaths);
         }
         std::unique_ptr<Object>& parentObj = objMgr.baseClasses.at(parentIdentifier).object.as<std::unique_ptr<Object>&>();
-        objSol = ObjectCreate(identifier, parentObj, lua, assets);
+        objSol = ObjectCreate(identifier, parentObj, lua, assets, objectScriptPaths);
     }
     else {
-        objSol = ObjectCreate(identifier, nullptr, lua, assets);
+        objSol = ObjectCreate(identifier, nullptr, lua, assets, objectScriptPaths);
     }
     std::unique_ptr<Object>& obj = objSol.as<std::unique_ptr<Object>&>();
 
@@ -120,6 +130,16 @@ void InitializeLuaEnvironment(sol::state& lua) {
         return PointDistance(x1, y1, x2, y2);
     };
 
+    lua["math"]["lerp"] = [](float a, float b, float t) {
+        return lerp(a, b, t);
+    };
+
+    lua["math"]["intersects"] = [](sol::table a, sol::table b) {
+        sf::FloatRect fa = { { a.get<float>(1), a.get<float>(2) }, { a.get<float>(3), a.get<float>(4) } };
+        sf::FloatRect fb = { { b.get<float>(1), b.get<float>(2) }, { b.get<float>(3), b.get<float>(4) } };
+        return fa.findIntersection(fb).has_value();
+    };
+
     lua.new_usertype<Object>(
         "Object",       sol::no_constructor,
         "x",            &Object::x,
@@ -139,10 +159,11 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "bbox_right",   sol::property(&Object::bboxRight, &Object::trySet),
         "bbox_bottom",  sol::property(&Object::bboxBottom, &Object::trySet),
         "bbox_top",     sol::property(&Object::bboxTop, &Object::trySet),
-        "get_id",      &Object::makeReference,
+        "get_id",       &Object::makeReference,
         "depth",        &Object::depth,
         "visible",      &Object::visible,
         "extends",      &Object::extends,
+        // "super",        &Object::parent,
         sol::meta_function::index,      &Object::getDyn,
         sol::meta_function::new_index,  &Object::setDyn
     );
@@ -181,6 +202,8 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "height", sol::readonly(&Room::height),
         "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
         "camera_y", sol::property(&Room::getCameraY, &Room::setCameraY),
+        "camera_width", sol::readonly(&Room::cameraWidth),
+        "camera_height", sol::readonly(&Room::cameraHeight),
 
         // Objects & instances
         "instance_create", &Room::instanceCreateScript,
@@ -236,39 +259,34 @@ void InitializeLuaEnvironment(sol::state& lua) {
         lua[identifier] = o;
     }
 
+    std::unordered_map<std::string, std::filesystem::path> objectScriptPaths;
+    for (auto& it : std::filesystem::recursive_directory_iterator(assets / "scripts")) {
+        if (it.is_regular_file()) {
+            if (it.path().extension() == ".lua") {
+                std::string identifier = it.path().filename().replace_extension("").string();
+                objectScriptPaths[identifier] = it.path();
+            }
+        }
+    }
+
     lua["object_create"] = [&](const std::string& identifier, sol::object extendsMaybe) {
         if (extendsMaybe.is<std::unique_ptr<Object>>()) {
-            return ObjectCreate(identifier, extendsMaybe.as<std::unique_ptr<Object>&>(), lua, assets);
+            return ObjectCreate(identifier, extendsMaybe.as<std::unique_ptr<Object>&>(), lua, assets, objectScriptPaths);
 
         }
-        return ObjectCreate(identifier, nullptr, lua, assets);
+        return ObjectCreate(identifier, nullptr, lua, assets, objectScriptPaths);
     };
 
     // Load objects
     ObjectManager& objMgr = ObjectManager::get();
-    std::vector<std::string> objectsToRunLua;
+
     for (auto& it : std::filesystem::directory_iterator(assets / "objects")) {
         if (!it.is_regular_file()) {
             continue;
         }
         std::string identifier = it.path().filename().replace_extension("").string(); // okay then
-        ObjectCreateRec(identifier, lua, assets);
-        objectsToRunLua.push_back(identifier);
+        ObjectCreateRec(identifier, lua, assets, objectScriptPaths);
     }
-
-    // Run object lua scripts
-    /*
-    for (auto& str : objectsToRunLua) {
-        std::filesystem::path corresponding = assets / "scripts" / "objects" / (str + ".lua");
-        if (std::filesystem::exists(corresponding)) {
-            auto res = lua.safe_script_file(corresponding.string());
-            if (!res.valid()) {
-                sol::error e = res;
-                std::cout << e.what() << "\n";
-            }
-        }
-    }
-    */
 
     // Load tilesets
     TilesetManager& tsMgr = TilesetManager::get();
@@ -317,10 +335,6 @@ void InitializeLuaEnvironment(sol::state& lua) {
         Game::get().currentRenderer->draw(rs);
     };
 
-    lua["play_sound"] = [&](const std::string& path) {
-        SoundManager::get().play(path + ".wav");
-    };
-
     lua["gfx"]["draw_sprite"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y) {
         if (spriteIndex == nullptr) return;
         spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex);
@@ -329,6 +343,42 @@ void InitializeLuaEnvironment(sol::state& lua) {
     lua["gfx"]["draw_sprite_ext"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float rot, sol::table color) {
         if (spriteIndex == nullptr) return;
         spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex, { xscale, yscale }, MakeColor(color), rot);
+    };
+
+    lua.new_usertype<ScriptSound>(
+        "Sound", sol::no_constructor
+    );
+
+    // Sounds
+    for (auto& it : std::filesystem::directory_iterator(assets / "sounds")) {
+        if (!it.is_directory()) continue;
+
+        std::string soundName = it.path().filename().string();
+
+        auto data = it.path() / "data.json";
+        std::ifstream i(data);
+        json j = json::parse(i);
+        std::string& extension = j["extension"].get<std::string>();
+
+        ScriptSound scriptSound;
+        scriptSound.file = std::filesystem::path(soundName) / std::string("sound" + extension);
+        scriptSound.volume = j["volume"];
+
+        std::cout << std::filesystem::path(assets / "sounds" / scriptSound.file).string() << "\n";
+
+        sol::object obj = sol::make_object(lua, scriptSound);
+        lua[soundName] = obj;
+    }
+
+    lua.create_named_table("sound");
+    lua["sound"]["is_playing"] = [&](const ScriptSound& sound) {
+        return SoundManager::get().isPlaying(sound.file.string());
+    };
+    lua["sound"]["play"] = [&](const ScriptSound& sound, float gain, float pitch) {
+        SoundManager::get().play(sound.file.string(), pitch, sound.volume * gain);
+    };
+    lua["sound"]["stop"] = [&](const ScriptSound& sound) {
+        SoundManager::get().stop(sound.file.string());
     };
 }
 
@@ -339,32 +389,31 @@ void InitializeLuaEnvironment(sol::state& lua) {
 int main() {
     sol::state lua;
 
-    std::cout << "1\n";
-
     auto res = lua.safe_script_file("assets/gmconvert.lua");
     if (!res.valid()) {
         sol::error e = res;
         std::cout << e.what() << "\n";
     }
-    std::cout << "2\n";
 
     std::filesystem::path p = std::filesystem::path(lua["GM_project_directory"].get<std::string>());
     GMConvert(p, "assets");
-    std::cout << "3\n";
 
     InitializeLuaEnvironment(lua);
-    std::cout << "4\n";
 
     SoundManager& sndMgr = SoundManager::get();
     sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 2, 224 * 2 }), "TackEngine");
     auto& window = Game::get().window;
-    window->setFramerateLimit(60);
-    std::cout << "5\n";
+    // window->setFramerateLimit(60);
 
     Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
 
     Room r(lua, "rm_2_1_a");
+
+    sf::Clock clock;
+    int fps = 0;
+    int frame = 0;
+    Timer t(60);
     while (window->isOpen()) {
         while (const std::optional event = window->pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
@@ -372,13 +421,19 @@ int main() {
             }
         }
 
-        Keys::get().update();
+        t.update();
 
-        r.update();
+        
+        const int ticks = t.getTickCount();
+        for (int i = 0; i < ticks; ++i) {
+            Keys::get().update();
+            r.update();
+        }
 
+        float alpha = t.getAlpha();
         Game::get().currentRenderer = Game::get().consoleRenderer.get();
         Game::get().consoleRenderer->clear();
-        r.draw();
+        r.draw(alpha);
         Game::get().consoleRenderer->display();
 
         window->clear();
@@ -403,6 +458,17 @@ int main() {
         window->draw(renderSprite);
 
         window->display();
+
+        if(clock.getElapsedTime().asSeconds() >= 1.f)
+		{
+			fps = frame;
+			frame = 0;
+			clock.restart();
+            std::cout << fps << "\n";
+		}
+
+        ++frame;
+
     }
 
     ObjectManager::get().baseClasses.clear();

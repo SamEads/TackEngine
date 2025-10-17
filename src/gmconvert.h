@@ -217,6 +217,62 @@ public:
 	}
 };
 
+class GMSound : public GMDirectoryResource {
+public:
+	float volume = 1.0f;
+	int sampleRate = 44100;
+	std::string extension;
+	void read(json& j, GameMakerProject* proj) override {
+		GMDirectoryResource::read(j, proj);
+		proj->managed["sounds"].push_back(name);
+
+		std::string& soundFile = j["soundFile"].get<std::string>();
+		size_t loc = soundFile.find_first_of(".");
+		extension = soundFile.substr(loc);
+
+		write(proj);
+	}
+	void write(GameMakerProject* proj) {
+		std::filesystem::path path = proj->assetsPath / "sounds" / name;
+		bool writeSound = false, writeData = false;
+
+		if (!std::filesystem::exists(path)) {
+			std::filesystem::create_directory(path);
+			writeSound = true;
+			writeData = true;
+		}
+		else {
+			auto lastWrite = std::filesystem::last_write_time(path / std::string("sound" + extension));
+			auto thisLW = std::filesystem::last_write_time(directory / std::string(name + extension));
+			if (thisLW > lastWrite) {
+				writeData = true;
+			}
+
+			std::filesystem::path dataFile = path / "data.json";
+			std::filesystem::path origFile = directory / (name + ".yy");
+			if (std::filesystem::last_write_time(origFile) > std::filesystem::last_write_time(dataFile)) {
+				writeData = true;
+			}
+		}
+
+		if (writeData) {
+			AddMessage("Writing " + name);
+			json j = {
+				{ "name", name },
+				{ "volume", volume },
+				{ "extension", extension },
+				{ "sample_rate", sampleRate }
+			};
+			std::ofstream o(path / "data.json");
+			o << std::setw(4) << j;
+		}
+
+		if (writeSound) {
+			std::filesystem::copy_file(directory / std::string(name + extension), path / std::string("sound" + extension));
+		}
+	}
+};
+
 class GMSprite : public GMDirectoryResource {
 public:
 	struct Frame {
@@ -234,7 +290,6 @@ public:
 	int bboxBottom;
 	void read(json& j, GameMakerProject* proj) override {
 		GMDirectoryResource::read(j, proj);
-
 		proj->managed["sprites"].push_back(name);
 
 		originX = j["sequence"]["xorigin"];
@@ -797,20 +852,19 @@ void GameMakerProject::parse() {
 		"rooms",
 		"objects",
 		"sprites",
-		"tilesets"
+		"tilesets",
+		"sounds"
 	};
 
 
 	if (!std::filesystem::exists(assetsPath)) {
 		std::filesystem::create_directory(assetsPath);
 	}
-	else if (std::filesystem::exists(assetsPath / "objects")) {
-		if (std::filesystem::exists(assetsPath / "managed.json")) {
-			std::ifstream i(assetsPath / "managed.json");
-			json j = json::parse(i);
-			for (auto& obj : j.get<json::object_t>()) {
-				lastManaged[obj.first] = obj.second.get<std::vector<std::string>>();
-			}
+	else if (std::filesystem::exists(assetsPath / "managed.json")) {
+		std::ifstream i(assetsPath / "managed.json");
+		json j = json::parse(i);
+		for (auto& obj : j.get<json::object_t>()) {
+			lastManaged[obj.first] = obj.second.get<std::vector<std::string>>();
 		}
 	}
 
@@ -996,6 +1050,7 @@ void AddResourceTypes() {
 	AddResourceType<GMObject>("GMObject");
 	AddResourceType<GMSprite>("GMSprite");
 	AddResourceType<GMTileSet>("GMTileSet");
+	AddResourceType<GMSound>("GMSound");
 
 	// Layers
 	AddResourceType<GMRBackgroundLayer>("GMRBackgroundLayer");

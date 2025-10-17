@@ -87,6 +87,8 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
 }
 
 void Room::update() {
+    cameraPrevX = cameraX;
+    cameraPrevY = cameraY;
     for (auto& i : instances) {
         i->xPrev = i->x;
         i->yPrev = i->y;
@@ -107,14 +109,16 @@ void Room::update() {
     addQueue();
 }
 
-void Room::draw() {
+void Room::draw(float alpha) {
     auto target = Game::get().currentRenderer;
 
     sf::View view = target->getView();
     float sw = cameraWidth;
     float sh = cameraHeight;
+    float cx = lerp(cameraPrevX, cameraX, alpha);
+    float cy = lerp(cameraPrevY, cameraY, alpha);
     view.setSize({ sw, sh });
-    view.setCenter({ floorf(cameraX) + floorf(sw / 2.0f), floorf(cameraY) + floorf(sh / 2.0f) });
+    view.setCenter({ floorf(cx) + floorf(sw / 2.0f), floorf(cy) + floorf(sh / 2.0f) });
     target->setView(view);
     
     std::vector<Drawable*> drawables;
@@ -139,19 +143,19 @@ void Room::draw() {
     for (auto& bg : backgrounds) {
         if (bg->visible) {
             drawables.push_back(bg.get());
-            bg->draw(this);
+            bg->draw(this, alpha);
         }
     }
     for (auto& tm : tilemaps) {
         if (tm->visible) {
             drawables.push_back(tm.get());
-            tm->draw(this);
+            tm->draw(this, alpha);
         }
     }
     for (auto& i : instances) {
         if (i->visible) {
             drawables.push_back(i.get());
-            i->draw(this);
+            i->draw(this, alpha);
         }
     }
 
@@ -160,7 +164,7 @@ void Room::draw() {
     });
 
     for (auto& d : drawables) {
-        d->draw(this);
+        d->draw(this, alpha);
     }
 
     target->setView(target->getDefaultView());
@@ -186,14 +190,17 @@ void Room::setCameraY(float val) {
     }
 }
 
-void Tilemap::draw(Room* room) {
+void Tilemap::draw(Room* room, float alpha) {
     int tileWidth = tileset->tileWidth;
     int tileHeight = tileset->tileHeight;
 
-    int thisCx = (room->cameraX / tileWidth) - 1;
+    float cx = lerp(room->cameraPrevX, room->cameraX, alpha);
+    float cy = lerp(room->cameraPrevY, room->cameraY, alpha);
+
+    int thisCx = (cx / tileWidth) - 1;
     int thisW = static_cast<int>(ceilf(room->cameraWidth / (float)tileWidth)) + 2;
     
-    int thisCy = (room->cameraY / tileHeight) - 1;
+    int thisCy = (cy / tileHeight) - 1;
     int thisH = static_cast<int>(ceilf(room->cameraHeight / (float)tileHeight)) + 2;
 
     int fullW = thisCx + std::min(thisW, tileCountX + 1);
@@ -208,7 +215,6 @@ void Tilemap::draw(Room* room) {
     s->setRotation(sf::degrees(0));
     s->setColor({ 255, 255, 255, 255 });
     auto target = Game::get().currentRenderer;
-
 
     static int timer = 0;
     timer++;
@@ -255,9 +261,12 @@ void Tilemap::draw(Room* room) {
     }
 }
 
-void Background::draw(Room* room) {
-    float x = room->cameraX - 10;
-    float y = room->cameraY - 10;
+void Background::draw(Room* room, float alpha) {
+    float cx = lerp(room->cameraPrevX, room->cameraX, alpha);
+    float cy = lerp(room->cameraPrevY, room->cameraY, alpha);
+
+    float x = cx - 10;
+    float y = cy - 10;
 
     if (spriteIndex) {
         sf::Sprite* spr = spriteIndex->sprite.get();

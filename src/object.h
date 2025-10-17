@@ -12,7 +12,7 @@ class Drawable {
 public:
     int depth = 0;
     bool visible = true;
-    virtual void draw(Room* room) {}
+    virtual void draw(Room* room, float alpha) {}
 };
 
 using ObjectId = int;
@@ -23,6 +23,7 @@ public:
     bool runScript(const std::string& script, Args... args) {
         auto step = kvp.find(script);
         if (step != kvp.end()) {
+            currentFunction = step->first;
             auto res = step->second.as<sol::safe_function>()(this, args...);
             if (!res.valid()) {
                 sol::error e = res;
@@ -47,6 +48,7 @@ public:
 
     sol::state& lua;
     std::unordered_map<std::string, sol::object> kvp;
+    std::string currentFunction;
 
     float x = 0.0f, y = 0.0f;
     float xspd = 0.0f, yspd = 0.0f;
@@ -107,16 +109,6 @@ public:
         rect.position = { bboxLeft(), bboxTop() };
         rect.size = { bboxRight() - rect.position.x, bboxBottom() - rect.position.y };
         return rect;
-    }
-
-    std::vector<sf::Vector2f> getPoints(float x1, float y1, float x2, float y2) const {
-        sf::FloatRect rect = { { x1, y1 }, { x2 - x1, y2 - y1 } };
-        return std::vector<sf::Vector2f> {
-            { rect.position.x, rect.position.y },
-            { rect.position.x + rect.size.x, rect.position.y },
-            { rect.position.x + rect.size.x, rect.position.y + rect.size.y },
-            { rect.position.x, rect.position.y + rect.size.y }
-        };
     }
 
     std::vector<sf::Vector2f> getPoints() const {
@@ -209,6 +201,23 @@ public:
 
     void trySet(sol::object v) {}
 
+    void eventInherited(sol::variadic_args va) {
+        Object* p = parent;
+        auto step = p->kvp.find(currentFunction);
+        while (step == p->kvp.end()) {
+            p = parent->parent;
+            if (!p) {
+                return;
+            }
+            step = p->kvp.find(currentFunction);
+        }
+        auto res = step->second.as<sol::safe_function>()(this, va);
+        if (!res.valid()) {
+            sol::error e = res;
+            std::cout << e.what() << "\n";
+        }
+    }
+
     const bool extends(Object* o) const {
         if (o == nullptr) {
             return false;
@@ -240,7 +249,7 @@ public:
     void beginStep(Room* room);
     void step(Room* room);
     void endStep(Room* room);
-    void draw(Room* room) override;
+    void draw(Room* room, float alpha) override;
 };
 
 #include <deque>

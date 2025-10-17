@@ -11,7 +11,7 @@ public:
     int tileCountX, tileCountY;
     std::string name;
     Tileset* tileset;
-    void draw(Room* room) override;
+    void draw(Room* room, float alpha) override;
 };
 
 class Background : public Drawable {
@@ -23,7 +23,7 @@ public:
     float x, y;
     std::string name;
     sf::Color color = sf::Color::White;
-    void draw(Room* room) override;
+    void draw(Room* room, float alpha) override;
 };
 
 class Room {
@@ -39,13 +39,14 @@ public:
 
     int width, height;
     float cameraX = 0, cameraY = 0;
+    float cameraPrevX = 0, cameraPrevY = 0;
     float cameraWidth = 0, cameraHeight = 0;
 
     Room(sol::state& lua, const std::string room);
 
     void update();
 
-    void draw();
+    void draw(float alpha);
 
     float getCameraX() {
         return cameraX;
@@ -157,7 +158,34 @@ public:
             return {};
         }
 
-        auto callerPts = caller->getPoints(x1, y1, x2, y2);
+        float width = x2 - x1;
+        float height = y2 - y1;
+        sf::FloatRect rect = { { x1, y1 }, { width, height } };
+
+        std::vector<Object::Reference> vec {};
+
+        for (auto& i : ids) {
+            auto& instance = i.second;
+            if (i.second->extends(type.get())) {
+                sf::FloatRect otherRect = { { instance->bboxLeft(), instance->bboxTop() }, { 0, 0 } };
+                otherRect.size.x = instance->bboxRight() - otherRect.position.x;
+                otherRect.size.y = instance->bboxBottom() - otherRect.position.y;
+                auto intersection = rect.findIntersection(otherRect);
+                if (intersection.has_value()) {
+                    vec.push_back(i.second->makeReference());
+                }
+            }
+        }
+
+        return vec;
+
+        /*
+        float width = x2 - x1;
+        float height = y2 - y1;
+        std::vector<sf::Vector2f> callerPts = {
+            { x1, y1 }, { x1 + width, y1 },
+            { x1 + width, y1 + width }, { x1, y1 + width }
+        };
 
         std::vector<Object::Reference> vec {};
 
@@ -171,14 +199,77 @@ public:
         }
 
         return vec;
+        */
     }
 
     sol::object collisionRectangleScript(Object* caller, float x1, float y1, float x2, float y2, sol::object type, sol::variadic_args va) {
+        float width = x2 - x1;
+        float height = y2 - y1;
+        sf::FloatRect rect = { { x1, y1 }, { width, height } };
+
+        // Reference
+        if (type.is<Object::Reference>()) {
+            Object::Reference& r = type.as<Object::Reference>();
+
+            // Instance doesn't exist, return null
+            if (!instanceExists(r)) {
+                return sol::make_object(lua, sol::lua_nil);
+            }
+            
+            Object* instance = r.object.as<Object*>();
+            sf::FloatRect otherRect = { { instance->bboxLeft(), instance->bboxTop() }, { 0, 0 } };
+            otherRect.size.x = instance->bboxRight() - otherRect.position.x;
+            otherRect.size.y = instance->bboxBottom() - otherRect.position.y;
+            auto intersection = rect.findIntersection(otherRect);
+            
+            // Intersection vs none
+            if (intersection.has_value()) {
+                return sol::make_object(lua, r);
+            }
+            else {
+                return sol::make_object(lua, sol::lua_nil);
+            }
+        }
+        else {
+            // Object
+            auto& baseType = type.as<std::unique_ptr<Object>&>();
+            Object* ignore = nullptr;
+            if (va.size() > 0) {
+                if (va[0].get<bool>() == true) {
+                    ignore = caller;
+                }
+            }
+            for (auto& i : ids) {
+                auto& instance = i.second;
+                if (i.second->extends(baseType.get())) {
+                    if (ignore == nullptr || i.second != ignore) {
+                        sf::FloatRect otherRect = { { instance->bboxLeft(), instance->bboxTop() }, { 0, 0 } };
+                        otherRect.size.x = instance->bboxRight() - otherRect.position.x;
+                        otherRect.size.y = instance->bboxBottom() - otherRect.position.y;
+                        auto intersection = rect.findIntersection(otherRect);
+                        if (intersection.has_value()) {
+                            return sol::make_object(lua, i.second->makeReference());
+                        }
+                    }
+                }
+            }
+    
+            return sol::make_object(lua, sol::lua_nil);
+        }
+
+
+        /*
+        Precise (old)
         if (type == sol::lua_nil) {
             return sol::make_object(lua, sol::lua_nil);
         }
 
-        auto callerPts = caller->getPoints(x1, y1, x2, y2);
+        float width = x2 - x1;
+        float height = y2 - y1;
+        std::vector<sf::Vector2f> callerPts = {
+            { x1, y1 }, { x1 + width, y1 },
+            { x1 + width, y1 + width }, { x1, y1 + width }
+        };
 
         if (type.is<Object::Reference>()) {
             Object::Reference& r = type.as<Object::Reference>();
@@ -210,6 +301,7 @@ public:
         }
 
         return sol::make_object(lua, sol::lua_nil);
+        */
     }
 
     Object::Reference instancePlaceScript(Object* caller, float x, float y, sol::object type) {
