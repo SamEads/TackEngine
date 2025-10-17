@@ -20,6 +20,28 @@ public:
     sf::Texture texture;
     std::unique_ptr<sf::Sprite> sprite;
 
+    void drawOrigin(
+        sf::RenderTarget& target,
+        sf::Vector2f position,
+        float frame,
+        sf::Vector2f scale,
+        sf::Vector2f origin,
+        sf::Color color,
+        float rotation) const {
+
+        int frameCount = frames.size();
+        int frameIndex = static_cast<int>(frame) % frameCount;
+
+        sprite->setTextureRect({ { frames[frameIndex].frameX, frames[frameIndex].frameY }, { width, height } });
+        sprite->setPosition(position);
+        sprite->setOrigin(origin);
+        sprite->setScale(scale);
+        sprite->setColor(color);
+        sprite->setRotation(sf::degrees(rotation));
+
+        target.draw(*(sprite.get()));
+    }
+
     void draw(
         sf::RenderTarget& target,
         sf::Vector2f position,

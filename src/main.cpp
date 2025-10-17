@@ -345,6 +345,11 @@ void InitializeLuaEnvironment(sol::state& lua) {
         spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex, { xscale, yscale }, MakeColor(color), rot);
     };
 
+    lua["gfx"]["draw_sprite_ext_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, float rot, sol::table color) {
+        if (spriteIndex == nullptr) return;
+        spriteIndex->drawOrigin(*Game::get().currentRenderer, { x - spriteIndex->originX + originX, y - spriteIndex->originY + originY }, imageIndex, { xscale, yscale }, { originX, originY }, MakeColor(color), rot);
+    };
+
     lua.new_usertype<ScriptSound>(
         "Sound", sol::no_constructor
     );
