@@ -1,7 +1,7 @@
 #pragma once
 
 #include <SFML/Graphics.hpp>
-#include "vendor/lua/sol2/sol.hpp"
+#include <sol/sol.hpp>
 
 class Keys {
 public:
@@ -17,5 +17,3 @@ public:
 	}
 	static void InitializeLuaEnums(sol::state& lua);
 };
-
-extern Keys keys;

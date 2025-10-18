@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 
 project(Tack-Engine LANGUAGES CXX C)
 
+set(USE_LUA_JIT true)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -32,9 +33,23 @@ target_compile_options(${PROJECT_NAME} PRIVATE -Oz)
 target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${PROJECT_INCLUDE}
+    "external/lua/include"
+)
+
+target_link_directories(${PROJECT_NAME} PRIVATE
+    "external/lua/lib"
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SFML::Graphics
     SFML::Audio
 )
+    
+if(USE_LUA_JIT)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        lua51
+        luajit
+        buildvm
+        minilua
+    )
+endif()

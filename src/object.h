@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 #include <SFML/Graphics.hpp>
-#include "vendor/lua/sol2/sol.hpp"
+#include <sol/sol.hpp>
 #include "sprite.h"
 #include "mathhelper.h"
 
@@ -12,7 +12,9 @@ class Drawable {
 public:
     int depth = 0;
     bool visible = true;
+    bool drawsGui = false;
     virtual void draw(Room* room, float alpha) {}
+    virtual void drawGui(Room* room, float alpha) {}
 };
 
 using ObjectId = int;
@@ -66,7 +68,9 @@ public:
     Object* self = nullptr;
     std::string identifier;
 
-    Object(sol::state& lua) : lua(lua) {}
+    Object(sol::state& lua) : lua(lua) {
+        this->drawsGui = true;
+    }
 
     const inline float bboxLeft() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
@@ -250,6 +254,7 @@ public:
     void step(Room* room);
     void endStep(Room* room);
     void draw(Room* room, float alpha) override;
+    void drawGui(Room* room, float alpha) override;
 };
 
 #include <deque>

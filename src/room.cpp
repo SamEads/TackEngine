@@ -165,6 +165,11 @@ void Room::draw(float alpha) {
     }
 
     target->setView(target->getDefaultView());
+
+    for (auto& d : drawables) {
+        if (!d->drawsGui) continue;
+        d->drawGui(this, alpha);
+    }
 }
 
 void Room::setCameraX(float val) {

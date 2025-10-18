@@ -24,3 +24,7 @@ void Object::draw(Room* room, float alpha) {
 	float interpY = lerp(yPrev, y, alpha);
 	spriteIndex->draw(*Game::get().currentRenderer, { floorf(interpX), floorf(interpY) }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
 }
+
+void Object::drawGui(Room *room, float alpha) {
+	runScript("draw_gui", room, alpha);
+}

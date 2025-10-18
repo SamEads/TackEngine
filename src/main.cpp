@@ -1,3 +1,6 @@
+extern "C" {
+#include <luajit.h>
+}
 #include <fstream>
 #include "vendor/json.hpp"
 #include "sprite.h"
@@ -8,6 +11,7 @@
 #include "keys.h"
 #include "utility/timer.h"
 #include "sound.h"
+#include "font.h"
 
 using namespace nlohmann;
 
@@ -116,7 +120,7 @@ sf::Color MakeColor(sol::table c) {
 void InitializeLuaEnvironment(sol::state& lua) {
     std::filesystem::path assets = Game::get().assetsFolder;
 
-    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::package, sol::lib::math, sol::lib::table);
+    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::package, sol::lib::math, sol::lib::table, sol::lib::jit);
     std::filesystem::path scriptsPath = (std::filesystem::path(assets.string()) / "scripts" / "?.lua");
     lua["package"]["path"] = scriptsPath.string();
 
@@ -194,6 +198,13 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "sprite_index", &Background::spriteIndex
     );
 
+    lua.new_usertype<Game>(
+        "Game",         sol::no_constructor,
+        "fps",          sol::readonly(&Game::fps),
+        sol::meta_function::index,      &Game::getKVP,
+        sol::meta_function::new_index,  &Game::setKVP
+    );
+
     lua.new_usertype<Room>(
         "Room", sol::no_constructor,
 
@@ -255,8 +266,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
             spr.frames.push_back({ i * spr.width, 0 });
         }
 
-        sol::object o = sol::make_object(lua.lua_state(), &spr);
-        lua[identifier] = o;
+        lua[identifier] = &spr;
     }
 
     std::unordered_map<std::string, std::filesystem::path> objectScriptPaths;
@@ -350,6 +360,36 @@ void InitializeLuaEnvironment(sol::state& lua) {
         spriteIndex->drawOrigin(*Game::get().currentRenderer, { x - spriteIndex->originX + originX, y - spriteIndex->originY + originY }, imageIndex, { xscale, yscale }, { originX, originY }, MakeColor(color), rot);
     };
 
+    lua.create_named_table("font");
+    lua["font"]["add"] = [&](const std::string fontName, SpriteIndex* spriteIndex, const std::string& order) {
+        auto& fm = FontManager::get();
+        auto& font = fm.fonts[fontName];
+        font.spriteIndex = spriteIndex;
+        for (int i = 0; i < order.length(); ++i) {
+            font.charMap[order[i]] = i;
+        }
+        lua[fontName] = &fm.fonts[fontName];
+    };
+
+    lua["font"]["draw"] = [&](float x, float y, Font* font, int spacing, const std::string& string, sol::table color) {
+        auto& spriteIndex = font->spriteIndex;
+        sf::RenderTarget& currentRenderer = *Game::get().currentRenderer;
+
+        float cx = 0, cy = 0;
+        for (int i = 0; i < string.length(); ++i) {
+            char c = string[i];
+            if (c == '\n') {
+                cx = 0;
+                cy += spriteIndex->height;
+                continue;
+            }
+            if (c != ' ') {
+                spriteIndex->draw(currentRenderer, { x + cx, y + cy }, font->charMap[string[i]], { 1, 1 }, MakeColor(color));
+            }
+            cx += spriteIndex->width + spacing;
+        }
+    };
+
     lua.new_usertype<ScriptSound>(
         "Sound", sol::no_constructor
     );
@@ -369,10 +409,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
         scriptSound.file = std::filesystem::path(soundName) / std::string("sound" + extension);
         scriptSound.volume = j["volume"];
 
-        std::cout << std::filesystem::path(assets / "sounds" / scriptSound.file).string() << "\n";
-
-        sol::object obj = sol::make_object(lua, scriptSound);
-        lua[soundName] = obj;
+        lua[soundName] = scriptSound;
     }
 
     lua.create_named_table("sound");
@@ -385,6 +422,23 @@ void InitializeLuaEnvironment(sol::state& lua) {
     lua["sound"]["stop"] = [&](const ScriptSound& sound) {
         SoundManager::get().stop(sound.file.string());
     };
+
+    lua["window_set_caption"] = [&](const std::string& caption) {
+        Game::get().window->setTitle(caption);
+    };
+
+    /*
+    lua["window_get_caption"] = [&]() {
+        Game::get().windowTitle;
+    };
+    */
+
+    lua["game"] = &Game::get();
+    auto gameRes = lua.safe_script_file(std::filesystem::path(assets / "scripts" / "game.lua").string());
+    if (!gameRes.valid()) {
+        sol::error e = gameRes;
+        std::cout << e.what() << "\n";
+    }
 }
 
 #define GMC_EMBEDDED
@@ -409,9 +463,10 @@ int main() {
     sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 2, 224 * 2 }), "TackEngine");
     auto& window = Game::get().window;
-    // window->setFramerateLimit(60);
 
     Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
+
+    lua["game"]["init"](lua["game"]);
 
     Room r(lua, "rm_2_1_a");
 
@@ -427,7 +482,6 @@ int main() {
         }
 
         t.update();
-
         
         const int ticks = t.getTickCount();
         for (int i = 0; i < ticks; ++i) {
@@ -464,13 +518,8 @@ int main() {
 
         window->display();
 
-        if(clock.getElapsedTime().asSeconds() >= 1.f)
-		{
-			fps = frame;
-			frame = 0;
-			clock.restart();
-            std::cout << fps << "\n";
-		}
+        float delta = clock.restart().asSeconds();
+        Game::get().fps = 1.f / delta;
 
         ++frame;
 
