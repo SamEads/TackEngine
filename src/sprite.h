@@ -51,7 +51,7 @@ public:
         float rotation = 0) const {
 
         int frameCount = frames.size();
-        int frameIndex = static_cast<int>(frame) % frameCount;
+        int frameIndex = static_cast<int>(floorf(frame)) % frameCount;
 
         sprite->setTextureRect({ { frames[frameIndex].frameX, frames[frameIndex].frameY }, { width, height } });
         sprite->setPosition(position);

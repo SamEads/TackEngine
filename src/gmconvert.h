@@ -226,7 +226,7 @@ public:
 		GMDirectoryResource::read(j, proj);
 		proj->managed["sounds"].push_back(name);
 
-		std::string& soundFile = j["soundFile"].get<std::string>();
+		std::string soundFile = j["soundFile"].get<std::string>();
 		size_t loc = soundFile.find_first_of(".");
 		extension = soundFile.substr(loc);
 

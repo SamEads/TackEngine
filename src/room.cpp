@@ -84,6 +84,9 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
     for (auto& objUnique : instances) {
         objUnique->runScript("room_start", this);
     }
+
+    cameraPrevX = cameraX;
+    cameraPrevY = cameraY;
 }
 
 void Room::update() {
@@ -115,10 +118,10 @@ void Room::draw(float alpha) {
     sf::View view = target->getView();
     float sw = cameraWidth;
     float sh = cameraHeight;
-    float cx = lerp(cameraPrevX, cameraX, alpha);
-    float cy = lerp(cameraPrevY, cameraY, alpha);
+    float cx = ceil(lerp(cameraPrevX, cameraX, alpha));
+    float cy = ceil(lerp(cameraPrevY, cameraY, alpha));
     view.setSize({ sw, sh });
-    view.setCenter({ floorf(cx) + floorf(sw / 2.0f), floorf(cy) + floorf(sh / 2.0f) });
+    view.setCenter({ cx + floorf(sw / 2.0f), cy + floorf(sh / 2.0f) });
     target->setView(view);
     
     std::vector<Drawable*> drawables;
@@ -230,7 +233,7 @@ void Tilemap::draw(Room* room, float alpha) {
 
             int tile = tileData[pos];
             int mask = (1 << 19) - 1;
-            if (tile & mask == 0) {
+            if ((tile & mask) == 0) {
                 continue;
             }
             
@@ -253,7 +256,8 @@ void Tilemap::draw(Room* room, float alpha) {
                 { tileX * (int)tileWidth + (tileX * tileset->separationX), tileY * (int)tileHeight + (tileY * tileset->separationY) },
                 { (int)tileWidth, (int)tileHeight }
             ));
-            s->setPosition({ floorf(xx * (float)tileWidth) + halfWidth, floorf(yy * (float)tileHeight) + halfHeight });
+            // s->setPosition({ floorf(xx * (float)tileWidth) + halfWidth, floorf(yy * (float)tileHeight) + halfHeight });
+            s->setPosition({ ceil(xx * (float)tileWidth) + halfWidth, ceil(yy * (float)tileHeight) + halfHeight });
 
             target->draw(*s);
             if (rotate) {

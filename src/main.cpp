@@ -1,6 +1,8 @@
+#ifdef USE_LUA_JIT
 extern "C" {
 #include <luajit.h>
 }
+#endif
 #include <fstream>
 #include "vendor/json.hpp"
 #include "sprite.h"
@@ -212,6 +214,8 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "width", sol::readonly(&Room::width),
         "height", sol::readonly(&Room::height),
         "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
+        "camera_xprevious", sol::readonly(&Room::cameraPrevX),
+        "camera_yprevious", sol::readonly(&Room::cameraPrevY),
         "camera_y", sol::property(&Room::getCameraY, &Room::setCameraY),
         "camera_width", sol::readonly(&Room::cameraWidth),
         "camera_height", sol::readonly(&Room::cameraHeight),
@@ -403,7 +407,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
         auto data = it.path() / "data.json";
         std::ifstream i(data);
         json j = json::parse(i);
-        std::string& extension = j["extension"].get<std::string>();
+        std::string extension = j["extension"].get<std::string>();
 
         ScriptSound scriptSound;
         scriptSound.file = std::filesystem::path(soundName) / std::string("sound" + extension);
@@ -422,9 +426,44 @@ void InitializeLuaEnvironment(sol::state& lua) {
     lua["sound"]["stop"] = [&](const ScriptSound& sound) {
         SoundManager::get().stop(sound.file.string());
     };
+    lua.create_named_table("music");
+    lua["music"]["play"] = [&](ScriptSound& sound) {
+        MusicManager::get().play(sound);
+    };
+    lua["music"]["set_loop_points"] = [&](float a, float b) {
+        MusicManager::get().setLoopPoints(a, b);
+    };
+    lua["music"]["stop"] = [&]() {
+        MusicManager::get().stop();
+    };
+    lua["music"]["pause"] = [&]() {
+        MusicManager::get().pause();
+    };
+    lua["music"]["get_position"] = [&]() {
+        return MusicManager::get().getPosition();
+    };
+    lua["music"]["set_position"] = [&](float position) {
+        MusicManager::get().setPosition(position);
+    };
+    lua["music"]["set_volume"] = [&](float volume) {
+        MusicManager::get().setVolume(volume);
+    };
+    lua["music"]["set_pitch"] = [&](float pitch) {
+        MusicManager::get().setPitch(pitch);
+    };
 
     lua["window_set_caption"] = [&](const std::string& caption) {
         Game::get().window->setTitle(caption);
+    };
+
+    lua["window_set_size"] = [&](unsigned int width, unsigned int height) {
+        Game::get().window->setSize({ width, height });
+    };
+
+    lua["window_center"] = [&]() {
+        sf::Vector2u displaySize = sf::VideoMode::getDesktopMode().size;
+        sf::Vector2u windowSize = Game::get().window->getSize();
+        Game::get().window->setPosition(sf::Vector2i { static_cast<int>((displaySize.x / 2) - (windowSize.x / 2)), static_cast<int>((displaySize.y / 2) - (windowSize.y / 2)) });
     };
 
     /*
@@ -474,6 +513,7 @@ int main() {
     int fps = 0;
     int frame = 0;
     Timer t(60);
+    Game& game = Game::get();
     while (window->isOpen()) {
         while (const std::optional event = window->pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
@@ -485,6 +525,7 @@ int main() {
         
         const int ticks = t.getTickCount();
         for (int i = 0; i < ticks; ++i) {
+            game.getKVP("step").as<sol::function>()(game);
             Keys::get().update();
             r.update();
         }
