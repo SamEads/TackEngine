@@ -508,7 +508,7 @@ int main() {
 
     lua["game"]["init"](lua["game"]);
 
-    Room r(lua, "rm_2_1_a");
+    Room r(lua, "rm_1_1_a");
 
     sf::Clock clock;
     int fps = 0;

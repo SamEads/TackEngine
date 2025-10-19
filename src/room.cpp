@@ -80,6 +80,16 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
         objUnique->runScript("create", this);
     }
 
+    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(room + ".lua");
+    if (std::filesystem::exists(roomScript)) {
+        auto result = lua.safe_script_file(roomScript);
+        if (!result.valid()) {
+            sol::error e = result;
+            std::cout << e.what() << "\n";
+        }
+    }
+    addQueue();
+
     addQueue();
     for (auto& objUnique : instances) {
         objUnique->runScript("room_start", this);
