@@ -77,6 +77,16 @@ public:
         queuedDelete.clear();
     }
 
+    void objectDestroy(std::unique_ptr<Object>& base) {
+        for (auto& i : instances) {
+            if (i->extends(base.get())) {
+                ObjectId id = i->id;
+                queuedDelete.push_back(ids[id]);
+                ids.erase(id);
+            }
+        }
+    }
+
     void instanceDestroy(ObjectId id) {
         queuedDelete.push_back(ids[id]);
         ids.erase(id);
@@ -364,6 +374,7 @@ public:
         copiedObject->id = currentId++;
         copiedObject->x = x;
         copiedObject->y = y;
+        copiedObject->depth = depth;
 
         Object* ptr = copiedObject.get();
 

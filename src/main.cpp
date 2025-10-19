@@ -224,6 +224,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "instance_create", &Room::instanceCreateScript,
         "instance_exists", &Room::instanceExists,
         "instance_destroy", &Room::instanceDestroyScript,
+        "object_destroy", &Room::objectDestroy,
         "object_exists", &Room::objectExists,
         "object_get", &Room::getObject,
 
