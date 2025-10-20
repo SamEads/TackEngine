@@ -26,6 +26,12 @@ public:
     void draw(Room* room, float alpha) override;
 };
 
+class RoomReference {
+public:
+    std::string name;
+    std::filesystem::path p;
+};
+
 class Room {
 public:
     ObjectId currentId = 0;
@@ -42,7 +48,7 @@ public:
     float cameraPrevX = 0, cameraPrevY = 0;
     float cameraWidth = 0, cameraHeight = 0;
 
-    Room(sol::state& lua, const std::string room);
+    Room(sol::state& lua, const RoomReference& room);
 
     void update();
 
@@ -382,5 +388,23 @@ public:
         ids[ptr->id] = ptr;
 
         return ptr;
+    }
+
+    std::unordered_map<std::string, sol::object> kvp;
+    void setKVP(const std::string& key, sol::main_object obj) {
+        auto it = kvp.find(key);
+        if (it == kvp.end()) {
+            kvp.insert({ key, sol::object(std::move(obj)) });
+        }
+        else {
+            it->second = sol::object(std::move(obj));
+        }
+    }
+    sol::object getKVP(const std::string& ref) {
+        auto it = kvp.find(ref);
+        if (it == kvp.end()) {
+            return sol::lua_nil;
+        }
+        return it->second;
     }
 };

@@ -203,6 +203,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
     lua.new_usertype<Game>(
         "Game",         sol::no_constructor,
         "fps",          sol::readonly(&Game::fps),
+        "goto_room",    sol::readonly(&Game::gotoRoom),
         sol::meta_function::index,      &Game::getKVP,
         sol::meta_function::new_index,  &Game::setKVP
     );
@@ -235,8 +236,26 @@ void InitializeLuaEnvironment(sol::state& lua) {
         // Collisions
         "instance_place", &Room::instancePlaceScript,
         "collision_rectangle", &Room::collisionRectangleScript,
-        "collision_rectangle_list", &Room::collisionRectangleListScript
+        "collision_rectangle_list", &Room::collisionRectangleListScript,
+
+        sol::meta_function::index,      &Room::getKVP,
+        sol::meta_function::new_index,  &Room::setKVP
     );
+
+    for (auto& it : std::filesystem::directory_iterator(assets / "rooms")) {
+        if (!it.is_directory()) {
+            continue;
+        }
+
+        std::filesystem::path p = it.path();
+        std::string identifier = p.filename().string();
+
+        RoomReference& ref = Game::get().rooms[identifier];
+        ref.name = identifier;
+        ref.p = p;
+
+        lua[identifier] = ref;
+    }
 
     // Load sprites
     SpriteManager& sprMgr = SpriteManager::get();
@@ -467,12 +486,6 @@ void InitializeLuaEnvironment(sol::state& lua) {
         Game::get().window->setPosition(sf::Vector2i { static_cast<int>((displaySize.x / 2) - (windowSize.x / 2)), static_cast<int>((displaySize.y / 2) - (windowSize.y / 2)) });
     };
 
-    /*
-    lua["window_get_caption"] = [&]() {
-        Game::get().windowTitle;
-    };
-    */
-
     lua["game"] = &Game::get();
     auto gameRes = lua.safe_script_file(std::filesystem::path(assets / "scripts" / "game.lua").string());
     if (!gameRes.valid()) {
@@ -486,7 +499,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
 #include "gmconvert.h"
 
 int main() {
-    sol::state lua;
+    sol::state& lua = Game::get().lua;
 
     auto res = lua.safe_script_file("assets/gmconvert.lua");
     if (!res.valid()) {
@@ -508,8 +521,6 @@ int main() {
 
     lua["game"]["init"](lua["game"]);
 
-    Room r(lua, "rm_1_1_a");
-
     sf::Clock clock;
     int fps = 0;
     int frame = 0;
@@ -528,13 +539,17 @@ int main() {
         for (int i = 0; i < ticks; ++i) {
             game.getKVP("step").as<sol::function>()(game);
             Keys::get().update();
-            r.update();
+            if (game.room) {
+                game.room->update();
+            }
         }
 
-        float alpha = t.getAlpha();
         Game::get().currentRenderer = Game::get().consoleRenderer.get();
         Game::get().consoleRenderer->clear();
-        r.draw(alpha);
+        if (game.room) {
+            float alpha = t.getAlpha();
+            game.room->draw(alpha);
+        }
         Game::get().consoleRenderer->display();
 
         window->clear();

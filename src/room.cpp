@@ -6,10 +6,9 @@
 
 using namespace nlohmann;
 
-Room::Room(sol::state& lua, const std::string room) : lua(lua) {
+Room::Room(sol::state& lua, const RoomReference& room) : lua(lua) {
     auto& game = Game::get();
-    std::filesystem::path path = game.assetsFolder / "rooms" / room;
-    std::filesystem::path jsonPath = path / "data.json";
+    std::filesystem::path jsonPath = room.p / "data.json";
 
     std::ifstream i(jsonPath);
     json j = json::parse(i);
@@ -75,20 +74,32 @@ Room::Room(sol::state& lua, const std::string room) : lua(lua) {
         }
     }
 
-    addQueue();
-    for (auto& objUnique : instances) {
-        objUnique->runScript("create", this);
-    }
-
-    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(room + ".lua");
+    lua["room"] = this;
+    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(room.name + ".lua");
     if (std::filesystem::exists(roomScript)) {
-        auto result = lua.safe_script_file(roomScript);
+        auto result = lua.safe_script_file(roomScript.string());
         if (!result.valid()) {
             sol::error e = result;
             std::cout << e.what() << "\n";
         }
     }
+
+    auto create = kvp.find("create");
+    if (create != kvp.end()) {
+        create->second.as<sol::safe_function>()(this);
+        addQueue();
+    }
+
     addQueue();
+    for (auto& objUnique : instances) {
+        objUnique->runScript("create", this);
+    }
+
+    auto start = kvp.find("room_start");
+    if (start != kvp.end()) {
+        start->second.as<sol::safe_function>()(this);
+        addQueue();
+    }
 
     addQueue();
     for (auto& objUnique : instances) {
