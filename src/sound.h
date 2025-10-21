@@ -5,6 +5,7 @@
 #include <SFML/Audio.hpp>
 #include <thread>
 #include <mutex>
+#include <sol/sol.hpp>
 
 class ScriptSound {
 public:
@@ -66,6 +67,7 @@ public:
         static MusicManager musMgr;
         return musMgr;
     }
+	void initializeLua(sol::state& lua);
 };
 
 class SoundManager {
@@ -99,6 +101,7 @@ public:
 	void update();
 	void shutdown();
 	bool isPlaying(std::string sound);
+	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 
     static SoundManager& get() {
         static SoundManager sndMgr;

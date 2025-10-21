@@ -19,4 +19,5 @@ public:
         static TilesetManager tsm;
         return tsm;
     }
+    void initializeLua(sol::state& lua, const std::filesystem::path& path);
 };

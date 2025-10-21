@@ -15,5 +15,5 @@ public:
 		static Keys keys;
 		return keys;
 	}
-	static void InitializeLuaEnums(sol::state& lua);
+	void initializeLua(sol::state& lua);
 };

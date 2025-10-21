@@ -14,8 +14,23 @@ void Keys::update() {
 	}
 }
 
-void Keys::InitializeLuaEnums(sol::state& lua) {
+bool Keys::pressed(sf::Keyboard::Scancode key) { return keys[(int)key] && !keysLast[(int)key]; }
+bool Keys::held(sf::Keyboard::Scancode key) { return keys[(int)key]; }
+bool Keys::released(sf::Keyboard::Scancode key) { return keysLast[(int)key] && !keys[(int)key]; }
+
+void Keys::initializeLua(sol::state& lua) {
     using namespace sf::Keyboard;
+
+    lua["keyboard_check"] = [this](Scancode key) {
+        return held(key);
+    };
+    lua["keyboard_pressed"] = [this](Scancode key) {
+        return pressed(key);
+    };
+    lua["keyboard_released"] = [this](Scancode key) {
+        return released(key);
+    };
+
 	lua.new_enum("Key",
         "unknown", Scancode::Unknown,
         "a", Scancode::A,
@@ -166,7 +181,3 @@ void Keys::InitializeLuaEnums(sol::state& lua) {
         "launchmediaselect", Scancode::LaunchMediaSelect  //!< Keyboard Launch Media Select key
 	);
 }
-
-bool Keys::pressed(sf::Keyboard::Scancode key) { return keys[(int)key] && !keysLast[(int)key]; }
-bool Keys::held(sf::Keyboard::Scancode key) { return keys[(int)key]; }
-bool Keys::released(sf::Keyboard::Scancode key) { return keysLast[(int)key] && !keys[(int)key]; }

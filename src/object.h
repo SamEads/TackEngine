@@ -251,15 +251,14 @@ public:
         return false;
     }
 
-    void beginStep(Room* room);
-    void step(Room* room);
-    void endStep(Room* room);
     void draw(Room* room, float alpha) override;
     void drawGui(Room* room, float alpha) override;
 };
 
 #include <deque>
 class ObjectManager {
+private:
+    std::unordered_map<std::string, std::filesystem::path> scriptPaths;
 public:
     class ScriptedInfo {
     public:
@@ -316,4 +315,6 @@ public:
         auto copied = std::make_unique<Object>(lua);
         return copied;
     }
+
+    void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 };

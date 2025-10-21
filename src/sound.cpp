@@ -1,5 +1,9 @@
 #include "sound.h"
 #include "mathhelper.h"
+#include "vendor/json.hpp"
+#include <fstream>
+
+using namespace nlohmann;
 
 void SoundManager::update() {
 	while (true) {
@@ -83,6 +87,41 @@ bool SoundManager::isPlaying(std::string sound) {
 	return false;
 }
 
+void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
+    lua.new_usertype<ScriptSound>(
+        "Sound", sol::no_constructor
+    );
+
+    // Sounds
+    for (auto& it : std::filesystem::directory_iterator(assets / "sounds")) {
+        if (!it.is_directory()) continue;
+
+        std::string soundName = it.path().filename().string();
+
+        auto data = it.path() / "data.json";
+        std::ifstream i(data);
+        json j = json::parse(i);
+        std::string extension = j["extension"].get<std::string>();
+
+        ScriptSound scriptSound;
+        scriptSound.file = std::filesystem::path(soundName) / std::string("sound" + extension);
+        scriptSound.volume = j["volume"];
+
+        lua[soundName] = scriptSound;
+    }
+
+	lua.create_named_table("sound");
+    lua["sound"]["is_playing"] = [&](const ScriptSound& sound) {
+        return isPlaying(sound.file.string());
+    };
+    lua["sound"]["play"] = [&](const ScriptSound& sound, float gain, float pitch) {
+        play(sound.file.string(), pitch, sound.volume * gain);
+    };
+    lua["sound"]["stop"] = [&](const ScriptSound& sound) {
+        stop(sound.file.string());
+    };
+}
+
 void SoundManager::play(std::string sound, float pitch, float volume, bool loop) {
 	std::lock_guard<std::mutex> s(mutex);
 
@@ -127,4 +166,32 @@ void SoundManager::fadeOut(std::string sound, float seconds) {
 		}
 		vec.clear();
 	}
+}
+
+void MusicManager::initializeLua(sol::state& lua) {
+	lua.create_named_table("music");
+    lua["music"]["play"] = [&](ScriptSound& sound) {
+		play(sound);
+    };
+    lua["music"]["set_loop_points"] = [&](float a, float b) {
+        setLoopPoints(a, b);
+    };
+    lua["music"]["stop"] = [&]() {
+        stop();
+    };
+    lua["music"]["pause"] = [&]() {
+        pause();
+    };
+    lua["music"]["get_position"] = [&]() {
+        return getPosition();
+    };
+    lua["music"]["set_position"] = [&](float position) {
+        setPosition(position);
+    };
+    lua["music"]["set_volume"] = [&](float volume) {
+        setVolume(volume);
+    };
+    lua["music"]["set_pitch"] = [&](float pitch) {
+        setPitch(pitch);
+    };
 }

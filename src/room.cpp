@@ -74,16 +74,6 @@ Room::Room(sol::state& lua, const RoomReference& room) : lua(lua) {
         }
     }
 
-    lua["room"] = this;
-    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(room.name + ".lua");
-    if (std::filesystem::exists(roomScript)) {
-        auto result = lua.safe_script_file(roomScript.string());
-        if (!result.valid()) {
-            sol::error e = result;
-            std::cout << e.what() << "\n";
-        }
-    }
-
     auto create = kvp.find("create");
     if (create != kvp.end()) {
         create->second.as<sol::safe_function>()(this);
@@ -94,6 +84,17 @@ Room::Room(sol::state& lua, const RoomReference& room) : lua(lua) {
     for (auto& objUnique : instances) {
         objUnique->runScript("create", this);
     }
+
+    lua["room"] = this;
+    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(room.name + ".lua");
+    if (std::filesystem::exists(roomScript)) {
+        auto result = lua.safe_script_file(roomScript.string());
+        if (!result.valid()) {
+            sol::error e = result;
+            std::cout << e.what() << "\n";
+        }
+    }
+    lua["room"] = nullptr;
 
     auto start = kvp.find("room_start");
     if (start != kvp.end()) {
@@ -119,16 +120,16 @@ void Room::update() {
         i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
     }
 
-    for (auto& i : instances) {
-        i->beginStep(this);
+    for (auto& instance : instances) {
+        instance->runScript("begin_step", this);
     }
     addQueue();
-    for (auto& i : instances) {
-        i->step(this);
+    for (auto& instance : instances) {
+        instance->runScript("step", this);
     }
     addQueue();
-    for (auto& i : instances) {
-        i->endStep(this);
+    for (auto& instance : instances) {
+        instance->runScript("end_step", this);
     }
     addQueue();
 }

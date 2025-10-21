@@ -35,4 +35,5 @@ public:
         }
         return it->second;
     }
+    void initializeLua(sol::state& state, const std::filesystem::path& assets);
 };
