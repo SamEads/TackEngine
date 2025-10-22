@@ -14,6 +14,33 @@ float SpriteIndex::getTexelHeight() {
     return 1;
 }
 
+sol::table SpriteIndex::getUVs() {
+    sf::Vector2u texSize = sprite->getTexture().getSize();
+    // assuming frame 0 for now...
+    float left = frames[0].frameX;
+    float top = frames[0].frameY;
+    float right = left + width;
+    float bottom = top + height;
+    left /= texSize.x;
+    right /= texSize.x;
+    top /= texSize.y;
+    bottom /= texSize.y;
+    return Game::get().lua.create_table_with(
+        1, left,
+        2, top,
+        3, right,
+        4, bottom
+    );
+}
+
+sol::table SpriteIndex::getTexelSize() {
+    sf::Vector2u texSize = sprite->getTexture().getSize();
+    return Game::get().lua.create_table_with(
+        1, 1.0f / texSize.x,
+        2, 1.0f / texSize.y
+    );
+}
+
 void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
     auto& sprIndex = lua.new_usertype<SpriteIndex>(
         "SpriteIndex", sol::no_constructor,
@@ -21,6 +48,8 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         "origin_y", sol::readonly(&SpriteIndex::originY),
         "height", sol::readonly(&SpriteIndex::height),
         "width", sol::readonly(&SpriteIndex::width),
+        "get_uvs", &SpriteIndex::getUVs,
+        "get_texel_size", &SpriteIndex::getTexelSize,
         "frame_count", sol::readonly_property(&SpriteIndex::getCount),
         "texel_width", sol::readonly_property(&SpriteIndex::getTexelWidth),
         "texel_height", sol::readonly_property(&SpriteIndex::getTexelHeight)
@@ -53,6 +82,8 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         int frameCount = j["frames"];
         std::vector<SpriteIndex::SpriteFrame> frameCoords;
         sf::Texture tex = CreatePaddedTexture(src, spr.width, spr.height, frameCount, 1, pad, 0, 0, 0, 0, &frameCoords);
+        sf::Image funny = tex.copyToImage();
+        funny.saveToFile("dump/"+identifier+".png");
         spr.texture = tex;
         spr.sprite = std::make_unique<sf::Sprite>(spr.texture);
         spr.frames = frameCoords;
@@ -107,16 +138,16 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
 }
 
 sf::Texture CreatePaddedTexture(
-    const sf::Image&                       source,
-    unsigned int                           tileWidth,
-    unsigned int                           tileHeight,
-    unsigned int                           frameCountX,
-    unsigned int                           frameCountY,
-    unsigned int                           pad,
-    unsigned int                           offsetX,
-    unsigned int                           offsetY,
-    unsigned int                           separationX,
-    unsigned int                           separationY,
+    const sf::Image& source,
+    unsigned int tileWidth,
+    unsigned int tileHeight,
+    unsigned int frameCountX,
+    unsigned int frameCountY,
+    unsigned int pad,
+    unsigned int offsetX,
+    unsigned int offsetY,
+    unsigned int separationX,
+    unsigned int separationY,
     std::vector<SpriteIndex::SpriteFrame>* outFrameCoords)
 {
     unsigned int texWidth = frameCountX * (tileWidth + 2 * pad);
@@ -145,26 +176,19 @@ sf::Texture CreatePaddedTexture(
                 for (int j = 0; j < pad; ++j) {
                     // Top-left corner
                     padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY - 1 - j), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(1, 1)), true);
-
                     // Top-right corner
                     padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY - 1 - j), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY), sf::Vector2i(1, 1)), true);
-
                     // Bottom-left corner
                     padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY + tileHeight + j), sf::IntRect(sf::Vector2i(srcX, srcY + tileHeight - 1), sf::Vector2i(1, 1)), true);
-
                     // Bottom-right corner
                     padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY + tileHeight + j), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY + tileHeight - 1), sf::Vector2i(1, 1)), true);
                 }
             }
 
-
             if (outFrameCoords)
                 outFrameCoords->push_back(SpriteIndex::SpriteFrame{ static_cast<int>(dstX), static_cast<int>(dstY) });
         }
     }
-
-    if (!outFrameCoords)
-        padded.saveToFile(std::filesystem::path("dump") / std::string(std::to_string(rand() % 500) + ".png"));
 
     sf::Texture tex;
     tex.loadFromImage(padded);

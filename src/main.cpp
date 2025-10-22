@@ -143,7 +143,7 @@ int main() {
         Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
         auto& window = Game::get().window;
 
-        Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256 * 4, 224 * 4 });
+        Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
 
         lua["game"]["init"](lua["game"]);
 

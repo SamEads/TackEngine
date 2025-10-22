@@ -24,7 +24,6 @@ void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path&
         ts.padding = 2;
         sf::Image src;
         std::string n = j["name"];
-        std::cout << n << "\n";
         bool loaded = src.loadFromFile(assets / "sprites" / j["sprite"].get<std::string>() / "frames.png");
         ts.tileCountX = (src.getSize().x - ts.offsetX + ts.separationX) / (ts.tileWidth + ts.separationX);
         ts.tileCountY = (src.getSize().y - ts.offsetY + ts.separationY) / (ts.tileHeight + ts.separationY);

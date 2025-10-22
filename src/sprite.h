@@ -29,6 +29,9 @@ public:
         return frames.size();
     }
 
+    sol::table getUVs();
+    sol::table getTexelSize();
+
     void drawOrigin(
         sf::RenderTarget& target,
         sf::Vector2f position,
