@@ -1,7 +1,7 @@
 #include "game.h"
 
 void Game::gotoRoom(const RoomReference& room) {
-    this->room = std::make_unique<Room>(lua, room);
+    this->queuedRoom = std::make_unique<Room>(lua, room);
 }
 
 void Game::initializeLua(sol::state &state, const std::filesystem::path& assets) {

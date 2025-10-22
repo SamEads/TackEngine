@@ -11,6 +11,7 @@ public:
     std::unique_ptr<sf::RenderTexture> consoleRenderer;
     std::unique_ptr<sf::RenderWindow> window;
     std::unique_ptr<Room> room;
+    std::unique_ptr<Room> queuedRoom;
     std::filesystem::path assetsFolder = "assets";
     std::unordered_map<std::string, RoomReference> rooms;
     static Game& get() {

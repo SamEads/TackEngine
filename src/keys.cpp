@@ -21,15 +21,11 @@ bool Keys::released(sf::Keyboard::Scancode key) { return keysLast[(int)key] && !
 void Keys::initializeLua(sol::state& lua) {
     using namespace sf::Keyboard;
 
-    lua["keyboard_check"] = [this](Scancode key) {
-        return held(key);
-    };
-    lua["keyboard_pressed"] = [this](Scancode key) {
-        return pressed(key);
-    };
-    lua["keyboard_released"] = [this](Scancode key) {
-        return released(key);
-    };
+    lua.create_named_table("keyboard");
+
+    lua["keyboard"]["check"] = [this](Scancode key) { return held(key); };
+    lua["keyboard"]["pressed"] = [this](Scancode key) { return pressed(key); };
+    lua["keyboard"]["released"] = [this](Scancode key) { return released(key); };
 
 	lua.new_enum("Key",
         "unknown", Scancode::Unknown,

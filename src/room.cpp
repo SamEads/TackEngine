@@ -117,7 +117,9 @@ void Room::update() {
     for (auto& i : instances) {
         i->xPrev = i->x;
         i->yPrev = i->y;
-        i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
+        if (i->incrementImageSpeed) {
+            i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
+        }
     }
 
     for (auto& instance : instances) {
@@ -136,14 +138,15 @@ void Room::update() {
 
 void Room::draw(float alpha) {
     auto target = Game::get().currentRenderer;
+    sf::Vector2u gameSize = target->getSize();
 
     sf::View view = target->getView();
     float sw = cameraWidth;
     float sh = cameraHeight;
-    float cx = ceil(lerp(cameraPrevX, cameraX, alpha));
-    float cy = ceil(lerp(cameraPrevY, cameraY, alpha));
-    view.setSize({ sw, sh });
-    view.setCenter({ cx + floorf(sw / 2.0f), cy + floorf(sh / 2.0f) });
+    float cx = lerp(cameraPrevX, cameraX, alpha);
+    float cy = lerp(cameraPrevY, cameraY, alpha);
+    view.setSize({ 256, 224 });
+    view.setCenter({ cx + sw / 2.0f, cy + sh / 2.0f });
     target->setView(view);
     
     std::vector<Drawable*> drawables;
@@ -186,7 +189,13 @@ void Room::draw(float alpha) {
     });
 
     for (auto& d : drawables) {
+        d->beginDraw(this, alpha);
+    }
+    for (auto& d : drawables) {
         d->draw(this, alpha);
+    }
+    for (auto& d : drawables) {
+        d->endDraw(this, alpha);
     }
 
     target->setView(target->getDefaultView());
@@ -233,15 +242,18 @@ void Tilemap::draw(Room* room, float alpha) {
     int fullW = thisCx + std::min(thisW, tileCountX + 1);
     int fullH = thisCy + std::min(thisH, tileCountY + 1);
 
-    SpriteIndex* spriteIndex = tileset->spriteIndex;
-    sf::Sprite* s = spriteIndex->sprite.get();
+    int padding = tileset->padding;
+
+    sf::Sprite s(tileset->tex);
     float halfWidth = tileWidth / 2;
     float halfHeight = tileHeight / 2;
-    s->setScale({ 1, 1 });
-    s->setOrigin({ halfWidth, halfHeight });
-    s->setRotation(sf::degrees(0));
-    s->setColor({ 255, 255, 255, 255 });
+    s.setScale({ 1, 1 });
+    s.setOrigin({ halfWidth, halfHeight });
+    s.setRotation(sf::degrees(0));
+    s.setColor({ 255, 255, 255, 255 });
     auto target = Game::get().currentRenderer;
+
+    va.clear();
 
     static int timer = 0;
     timer++;
@@ -270,22 +282,36 @@ void Tilemap::draw(Room* room, float alpha) {
             float scaleX = (mirror) ? -1 : 1;
             float scaleY = (flip) ? -1 : 1;
             
+            float x = (xx * (float)tileWidth) + halfWidth;
+            float y = (yy * (float)tileHeight) + halfHeight;
+
+            s.setScale({ scaleX, scaleY }); 
             if (rotate) {
-                s->setRotation(sf::degrees(90));
+                s.setRotation(sf::degrees(90));
             }
-            s->setScale({ scaleX, scaleY }); 
-            s->setTextureRect(sf::IntRect(
-                { tileX * (int)tileWidth + (tileX * tileset->separationX), tileY * (int)tileHeight + (tileY * tileset->separationY) },
+
+            int texX = padding + tileX * (tileWidth + 2 * padding);
+            int texY = padding + tileY * (tileHeight + 2 * padding);
+            if (tileX == 2 && tileY == 0) {
+            }
+
+            s.setTextureRect(sf::IntRect(
+                { texX, texY },
                 { (int)tileWidth, (int)tileHeight }
             ));
-            // s->setPosition({ floorf(xx * (float)tileWidth) + halfWidth, floorf(yy * (float)tileHeight) + halfHeight });
-            s->setPosition({ ceil(xx * (float)tileWidth) + halfWidth, ceil(yy * (float)tileHeight) + halfHeight });
 
-            target->draw(*s);
+            s.setPosition({ (xx * (float)tileWidth) + halfWidth, (yy * (float)tileHeight) + halfHeight });
+
+            target->draw(s);
+
             if (rotate) {
-                s->setRotation(sf::degrees(0));
+                s.setRotation(sf::degrees(0));
             }
         }
+        sf::RenderStates rs;
+        rs.texture = &tileset->tex;
+        rs.coordinateType = sf::CoordinateType::Pixels;
+        target->draw(va, rs);
     }
 }
 
@@ -323,6 +349,7 @@ void Background::draw(Room* room, float alpha) {
     }
     else {
         sf::RectangleShape rs({ room->cameraWidth + 20, room->cameraHeight + 20 });
+        rs.setTexture(&SpriteManager::get().whiteTexture);
         rs.setFillColor(color);
         rs.setPosition({ x, y });
         Game::get().currentRenderer->draw(rs);

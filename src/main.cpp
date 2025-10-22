@@ -12,6 +12,7 @@ extern "C" {
 #include "room.h"
 #include "keys.h"
 #include "utility/timer.h"
+#include "shader.h"
 #include "sound.h"
 #include "font.h"
 
@@ -76,6 +77,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "instance_destroy", &Room::instanceDestroyScript,
         "object_destroy", &Room::objectDestroy,
         "object_exists", &Room::objectExists,
+        "object_count", &Room::objectCount,
         "object_get", &Room::getObject,
 
         // Layers
@@ -106,12 +108,13 @@ void InitializeLuaEnvironment(sol::state& lua) {
         lua[identifier] = ref;
     }
 
-    SpriteManager::get().initializeLua(lua, assets);
     TilesetManager::get().initializeLua(lua, assets);
+    SpriteManager::get().initializeLua(lua, assets);
     ObjectManager::get().initializeLua(lua, assets);
-    FontManager::get().initializeLua(lua);
+    FontManager::get().initializeLua(lua, assets);
     SoundManager::get().initializeLua(lua, assets);
     MusicManager::get().initializeLua(lua);
+    ShaderManager::get().initializeLua(lua);
     Keys::get().initializeLua(lua);
     Game::get().initializeLua(lua, assets);
 }
@@ -121,90 +124,109 @@ void InitializeLuaEnvironment(sol::state& lua) {
 #include "gmconvert.h"
 
 int main() {
-    sol::state& lua = Game::get().lua;
+    std::thread gameThread = std::thread([&] {
+        sol::state& lua = Game::get().lua;
 
-    auto res = lua.safe_script_file("assets/gmconvert.lua");
-    if (!res.valid()) {
-        sol::error e = res;
-        std::cout << e.what() << "\n";
-    }
-
-    std::filesystem::path p = std::filesystem::path(lua["GM_project_directory"].get<std::string>());
-    GMConvert(p, "assets");
-
-    InitializeLuaEnvironment(lua);
-
-    SoundManager& sndMgr = SoundManager::get();
-    sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
-    Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 2, 224 * 2 }), "TackEngine");
-    auto& window = Game::get().window;
-
-    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
-
-    lua["game"]["init"](lua["game"]);
-
-    sf::Clock clock;
-    int fps = 0;
-    int frame = 0;
-    Timer t(60);
-    Game& game = Game::get();
-    while (window->isOpen()) {
-        while (const std::optional event = window->pollEvent()) {
-            if (event->is<sf::Event::Closed>()) {
-                window->close();
-            }
+        auto res = lua.safe_script_file("assets/gmconvert.lua");
+        if (!res.valid()) {
+            sol::error e = res;
+            std::cout << e.what() << "\n";
         }
 
-        t.update();
-        
-        const int ticks = t.getTickCount();
-        for (int i = 0; i < ticks; ++i) {
-            game.getKVP("step").as<sol::function>()(game);
-            Keys::get().update();
+        std::filesystem::path p = std::filesystem::path(lua["GM_project_directory"].get<std::string>());
+        GMConvert(p, "assets");
+
+        InitializeLuaEnvironment(lua);
+
+        SoundManager& sndMgr = SoundManager::get();
+        sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
+        Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
+        auto& window = Game::get().window;
+
+        Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256 * 4, 224 * 4 });
+
+        lua["game"]["init"](lua["game"]);
+
+        sf::Clock clock;
+        int fps = 0;
+        int frame = 0;
+        Timer t(60);
+        Game& game = Game::get();
+        while (window->isOpen()) {
+            if (game.queuedRoom) {
+                game.room = std::move(game.queuedRoom);
+                game.queuedRoom.reset();
+            }
+            while (const std::optional event = window->pollEvent()) {
+                if (event->is<sf::Event::Closed>()) {
+                    window->close();
+                }
+            }
+
+            t.update();
+            
+            const int ticks = t.getTickCount();
+            for (int i = 0; i < ticks; ++i) {
+                game.getKVP("step").as<sol::function>()(game);
+                Keys::get().update();
+                if (game.room) {
+                    game.room->update();
+                }
+            }
+
+            Game::get().currentRenderer = Game::get().consoleRenderer.get();
+            Game::get().consoleRenderer->clear();
             if (game.room) {
-                game.room->update();
+                float alpha = t.getAlpha();
+                game.room->draw(alpha);
             }
+            Game::get().consoleRenderer->display();
+
+            window->clear();
+
+            const auto dispSize = window->getSize();
+            sf::View view(sf::FloatRect{ { 0, 0 }, { (float)dispSize.x, (float)dispSize.y } });
+            view.setCenter({ dispSize.x / 2.0f, dispSize.y / 2.0f });
+            window->setView(view);
+
+            sf::Sprite renderSprite(Game::get().consoleRenderer->getTexture());
+            sf::Vector2u gameSize = Game::get().consoleRenderer->getSize();
+
+            float scaleX = floorf(dispSize.x / (float)gameSize.x);
+            float scaleY = floorf(dispSize.y / (float)gameSize.y);
+            float scale = std::max(1.0f, std::min(scaleX, scaleY));
+
+            renderSprite.setScale({ scale, scale });
+
+            float offsetX = floorf((dispSize.x - (gameSize.x * scale)) / 2.f);
+            float offsetY = floorf((dispSize.y - (gameSize.y * scale)) / 2.f);
+            renderSprite.setPosition({ offsetX, offsetY });
+
+            window->draw(renderSprite);
+
+            window->display();
+
+            float delta = clock.restart().asSeconds();
+            Game::get().fps = 1.f / delta;
+
+            ++frame;
+
         }
 
-        Game::get().currentRenderer = Game::get().consoleRenderer.get();
-        Game::get().consoleRenderer->clear();
-        if (game.room) {
-            float alpha = t.getAlpha();
-            game.room->draw(alpha);
+        ObjectManager::get().baseClasses.clear();
+        TilesetManager::get().tilesets.clear();
+        SpriteManager::get().sprites.clear();
+    });
+
+    while (true) {
+        std::string s;
+        std::cin >> s;
+        auto res = Game::get().lua.safe_script(s);
+        if (!res.valid()) {
+            sol::error e = res;
+            std::cout << e.what() << "\n";
         }
-        Game::get().consoleRenderer->display();
-
-        window->clear();
-
-        const auto dispSize = window->getSize();
-        sf::View view(sf::FloatRect{ { 0, 0 }, { (float)dispSize.x, (float)dispSize.y } });
-        view.setCenter({ dispSize.x / 2.0f, dispSize.y / 2.0f });
-        window->setView(view);
-
-        sf::Sprite renderSprite(Game::get().consoleRenderer->getTexture());
-
-        float scaleX = floorf(dispSize.x / (float)256);
-        float scaleY = floorf(dispSize.y / (float)224);
-        float scale = std::max(1.0f, std::min(scaleX, scaleY));
-
-        renderSprite.setScale({ scale, scale });
-
-        float offsetX = floorf((dispSize.x - (256 * scale)) / 2.f);
-        float offsetY = floorf((dispSize.y - (224 * scale)) / 2.f);
-        renderSprite.setPosition({ offsetX, offsetY });
-
-        window->draw(renderSprite);
-
-        window->display();
-
-        float delta = clock.restart().asSeconds();
-        Game::get().fps = 1.f / delta;
-
-        ++frame;
-
     }
 
-    ObjectManager::get().baseClasses.clear();
-    TilesetManager::get().tilesets.clear();
-    SpriteManager::get().sprites.clear();
+    gameThread.join();
 }

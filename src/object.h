@@ -15,6 +15,8 @@ public:
     bool visible = true;
     bool drawsGui = false;
     virtual void draw(Room* room, float alpha) {}
+    virtual void beginDraw(Room* room, float alpha) {}
+    virtual void endDraw(Room* room, float alpha) {}
     virtual void drawGui(Room* room, float alpha) {}
 };
 
@@ -61,6 +63,7 @@ public:
     float imageSpeed = 0.0f;
     float imageSpeedMod = 1.0f;
     float imageAngle = 0.0f;
+    bool incrementImageSpeed = true;
 
     SpriteIndex* spriteIndex = nullptr;
     SpriteIndex* maskIndex = nullptr;
@@ -252,6 +255,8 @@ public:
     }
 
     void draw(Room* room, float alpha) override;
+    void beginDraw(Room* room, float alpha) override;
+    void endDraw(Room* room, float alpha) override;
     void drawGui(Room* room, float alpha) override;
 };
 

@@ -9,7 +9,8 @@ public:
     int tileCount;
     int tileCountX, tileCountY;
     int tileWidth, tileHeight;
-    SpriteIndex* spriteIndex;
+    int padding;
+    sf::Texture tex;
 };
 
 class TilesetManager {

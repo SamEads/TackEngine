@@ -7,6 +7,7 @@
 class Tileset;
 class Tilemap : public Drawable {
 public:
+    sf::VertexArray va;
     std::vector<unsigned int> tileData;
     int tileCountX, tileCountY;
     std::string name;
@@ -115,6 +116,17 @@ public:
         object->runScript("destroy", this);
         queuedDelete.push_back(ids[object->id]);
         ids.erase(object->id);
+    }
+
+    int objectCount(Object* baseType) {
+        if (baseType == NULL) {
+            return false;
+        }
+        int c = 0;
+        for (auto& i : instances) {
+            if (i->extends(baseType)) c++;
+        }
+        return c;
     }
 
     bool objectExists(Object* baseType) {

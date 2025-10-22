@@ -11,10 +11,17 @@ void Object::draw(Room* room, float alpha) {
 	if (runScript("draw", room, alpha) || !spriteIndex) {
 		return;
 	}
-
 	float interpX = lerp(xPrev, x, alpha);
 	float interpY = lerp(yPrev, y, alpha);
 	spriteIndex->draw(*Game::get().currentRenderer, { floorf(interpX), floorf(interpY) }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
+}
+
+void Object::beginDraw(Room *room, float alpha) {
+	runScript("begin_draw", room, alpha);
+}
+
+void Object::endDraw(Room *room, float alpha) {
+	runScript("end_draw", room, alpha);
 }
 
 void Object::drawGui(Room *room, float alpha) {
@@ -126,6 +133,7 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         "mask_index",   &Object::maskIndex,
         "image_index",  &Object::imageIndex,
         "image_speed",  &Object::imageSpeed,
+        "increment_image_speed",  &Object::incrementImageSpeed,
         "image_angle",  &Object::imageAngle,
         "image_xscale", &Object::xScale,
         "image_yscale", &Object::yScale,
