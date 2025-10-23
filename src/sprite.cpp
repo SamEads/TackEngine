@@ -82,8 +82,6 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         int frameCount = j["frames"];
         std::vector<SpriteIndex::SpriteFrame> frameCoords;
         sf::Texture tex = CreatePaddedTexture(src, spr.width, spr.height, frameCount, 1, pad, 0, 0, 0, 0, &frameCoords);
-        sf::Image funny = tex.copyToImage();
-        funny.saveToFile("dump/"+identifier+".png");
         spr.texture = tex;
         spr.sprite = std::make_unique<sf::Sprite>(spr.texture);
         spr.frames = frameCoords;

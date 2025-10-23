@@ -226,6 +226,16 @@ void Room::setCameraY(float val) {
     }
 }
 
+sol::table Room::objectGetList(Object *baseType) {
+    sol::table t(lua, sol::create);
+    for (auto& i : instances) {
+        if (i->extends(baseType)) {
+            t.add(i->makeReference());
+        }
+    }
+    return t;
+}
+
 void Tilemap::draw(Room* room, float alpha) {
     int tileWidth = tileset->tileWidth;
     int tileHeight = tileset->tileHeight;

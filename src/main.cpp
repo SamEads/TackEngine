@@ -75,10 +75,11 @@ void InitializeLuaEnvironment(sol::state& lua) {
         "instance_create", &Room::instanceCreateScript,
         "instance_exists", &Room::instanceExists,
         "instance_destroy", &Room::instanceDestroyScript,
-        "object_destroy", &Room::objectDestroy,
-        "object_exists", &Room::objectExists,
         "object_count", &Room::objectCount,
         "object_get", &Room::getObject,
+        "object_exists", &Room::objectExists,
+        "object_get_list", &Room::objectGetList,
+        "object_destroy", &Room::objectDestroy,
 
         // Layers
         "tile_layer_get", &Room::getTileLayer,
@@ -87,7 +88,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
         // Collisions
         "instance_place", &Room::instancePlaceScript,
         "collision_rectangle", &Room::collisionRectangleScript,
-        "collision_rectangle_list", &Room::collisionRectangleListScript,
+        "collision_rectangle_list", &Room::collisionRectangleList,
 
         sol::meta_function::index,      &Room::getKVP,
         sol::meta_function::new_index,  &Room::setKVP

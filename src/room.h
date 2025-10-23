@@ -162,6 +162,8 @@ public:
         return sol::make_object(lua, sol::lua_nil);
     }
 
+    sol::table objectGetList(Object* baseType);
+
     sol::object getObject(Object* baseType) {
         if (baseType == NULL) {
             return sol::make_object(lua, sol::lua_nil);
@@ -181,7 +183,7 @@ public:
         return ids.find(refId) != ids.end();
     }
 
-    std::vector<Object::Reference> collisionRectangleListScript(Object* caller, float x1, float y1, float x2, float y2, std::unique_ptr<Object>& type) {
+    std::vector<Object::Reference> collisionRectangleList(Object* caller, float x1, float y1, float x2, float y2, std::unique_ptr<Object>& type) {
         if (type == nullptr) {
             return {};
         }
