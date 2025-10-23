@@ -6,7 +6,74 @@
 
 using namespace nlohmann;
 
-Room::Room(sol::state& lua, const RoomReference& room) : lua(lua) {
+void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
+    lua.new_usertype<Tilemap>(
+        "Tilemap", sol::no_constructor,
+        "visible", &Tilemap::visible,
+        "depth", &Tilemap::depth
+    );
+
+    lua.new_usertype<Background>(
+        "Background", sol::no_constructor,
+        "visible", &Background::visible,
+        "depth", &Background::depth,
+        "sprite_index", &Background::spriteIndex
+    );
+
+    lua.new_usertype<Room>(
+        "Room", sol::no_constructor,
+
+        // Room info
+        "width", sol::readonly(&Room::width),
+        "height", sol::readonly(&Room::height),
+        "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
+        "camera_xprevious", sol::readonly(&Room::cameraPrevX),
+        "camera_yprevious", sol::readonly(&Room::cameraPrevY),
+        "camera_y", sol::property(&Room::getCameraY, &Room::setCameraY),
+        "camera_width", sol::readonly(&Room::cameraWidth),
+        "camera_height", sol::readonly(&Room::cameraHeight),
+
+        // Objects & instances
+        "instance_create", &Room::instanceCreateScript,
+        "instance_exists", &Room::instanceExists,
+        "instance_destroy", &Room::instanceDestroyScript,
+        "object_count", &Room::objectCount,
+        "object_get", &Room::getObject,
+        "object_exists", &Room::objectExists,
+        "object_get_list", &Room::objectGetList,
+        "object_destroy", &Room::objectDestroy,
+
+        // Layers
+        "tile_layer_get", &Room::getTileLayer,
+        "background_layer_get", &Room::getBackgroundLayer,
+
+        // Collisions
+        "instance_place", &Room::instancePlaceScript,
+        "collision_rectangle", &Room::collisionRectangleScript,
+        "collision_rectangle_list", &Room::collisionRectangleList,
+
+        sol::meta_function::index,      &Room::getKVP,
+        sol::meta_function::new_index,  &Room::setKVP
+    );
+
+    for (auto& it : std::filesystem::directory_iterator(assets / "rooms")) {
+        if (!it.is_directory()) {
+            continue;
+        }
+
+        std::filesystem::path p = it.path();
+        std::string identifier = p.filename().string();
+
+        RoomReference& ref = Game::get().rooms[identifier];
+        ref.name = identifier;
+        ref.p = p;
+
+        lua[identifier] = ref;
+    }
+}
+
+Room::Room(sol::state &lua, const RoomReference &room) : lua(lua)
+{
     auto& game = Game::get();
     std::filesystem::path jsonPath = room.p / "data.json";
 
@@ -226,14 +293,14 @@ void Room::setCameraY(float val) {
     }
 }
 
-sol::table Room::objectGetList(Object *baseType) {
-    sol::table t(lua, sol::create);
+std::vector<Object::Reference> Room::objectGetList(Object* baseType) {
+    std::vector<Object::Reference> v;
     for (auto& i : instances) {
         if (i->extends(baseType)) {
-            t.add(i->makeReference());
+            v.push_back(i->makeReference());
         }
     }
-    return t;
+    return v;
 }
 
 void Tilemap::draw(Room* room, float alpha) {

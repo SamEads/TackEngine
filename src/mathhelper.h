@@ -19,6 +19,12 @@ inline float lerp(float a, float b, float t) {
     return a + (b - a) * t;
 }
 
+inline float signum(float number) {
+    if (number > 0) return 1;
+    if (number < 0) return -1;
+    return 0;
+}
+
 inline float PointDistance(float x1, float y1, float x2, float y2) {
     return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2) * 1.0);
 }

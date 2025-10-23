@@ -14,7 +14,7 @@ float SpriteIndex::getTexelHeight() {
     return 1;
 }
 
-sol::table SpriteIndex::getUVs() {
+std::tuple<float, float, float, float> SpriteIndex::getUVs() {
     sf::Vector2u texSize = sprite->getTexture().getSize();
     // assuming frame 0 for now...
     float left = frames[0].frameX;
@@ -25,24 +25,16 @@ sol::table SpriteIndex::getUVs() {
     right /= texSize.x;
     top /= texSize.y;
     bottom /= texSize.y;
-    return Game::get().lua.create_table_with(
-        1, left,
-        2, top,
-        3, right,
-        4, bottom
-    );
+    return { left, top, right, bottom };
 }
 
-sol::table SpriteIndex::getTexelSize() {
+std::tuple<float, float> SpriteIndex::getTexelSize() {
     sf::Vector2u texSize = sprite->getTexture().getSize();
-    return Game::get().lua.create_table_with(
-        1, 1.0f / texSize.x,
-        2, 1.0f / texSize.y
-    );
+    return { 1.0f / texSize.x, 1.0f / texSize.y };
 }
 
 void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
-    auto& sprIndex = lua.new_usertype<SpriteIndex>(
+    lua.new_usertype<SpriteIndex>(
         "SpriteIndex", sol::no_constructor,
         "origin_x", sol::readonly(&SpriteIndex::originX),
         "origin_y", sol::readonly(&SpriteIndex::originY),
@@ -74,7 +66,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         SpriteIndex& spr = sprites[identifier];
 
         sf::Image src;
-        src.loadFromFile((p / "frames.png").string());
+        bool framesLoaded = src.loadFromFile((p / "frames.png").string());
 
         int pad = 1;
         spr.width = j["width"];
@@ -98,9 +90,9 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
     }
 
     // GFX
-    lua.create_named_table("gfx");
+    sol::table gfx = lua.create_named_table("gfx");
 
-    lua["gfx"]["draw_rectangle"] = [&](float x1, float y1, float x2, float y2, sol::table color) {
+    gfx["draw_rectangle"] = [&](float x1, float y1, float x2, float y2, sol::table color) {
         sf::RectangleShape rs({ x2 - x1, y2 - y1 });
         rs.setPosition({ x1, y1 });
         rs.setFillColor(MakeColor(color));
@@ -109,8 +101,8 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         Game::get().currentRenderer->draw(rs);
     };
 
-    lua["gfx"]["draw_circle"] = [&](float x, float y, float r, sol::table color) {
-        sf::CircleShape cs({ r });
+    gfx["draw_circle"] = [&](float x, float y, float r, sol::table color) {
+        sf::CircleShape cs(r);
         cs.setPosition({ x, y });
         cs.setOrigin({ r, r });
         cs.setFillColor(MakeColor(color));
@@ -119,17 +111,17 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         Game::get().currentRenderer->draw(cs);
     };
 
-    lua["gfx"]["draw_sprite"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y) {
+    gfx["draw_sprite"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y) {
         if (spriteIndex == nullptr) return;
         spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex);
     };
 
-    lua["gfx"]["draw_sprite_ext"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float rot, sol::table color) {
+    gfx["draw_sprite_ext"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float rot, sol::table color) {
         if (spriteIndex == nullptr) return;
         spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex, { xscale, yscale }, MakeColor(color), rot);
     };
 
-    lua["gfx"]["draw_sprite_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, float rot, sol::table color) {
+    gfx["draw_sprite_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, float rot, sol::table color) {
         if (spriteIndex == nullptr) return;
         spriteIndex->drawOrigin(*Game::get().currentRenderer, { x - spriteIndex->originX + originX, y - spriteIndex->originY + originY }, imageIndex, { xscale, yscale }, { originX, originY }, MakeColor(color), rot);
     };
@@ -160,26 +152,26 @@ sf::Texture CreatePaddedTexture(
             unsigned int dstX = pad + x * (tileWidth + 2 * pad);
             unsigned int dstY = pad + y * (tileHeight + 2 * pad);
 
-            padded.copy(source, sf::Vector2u(dstX, dstY), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(tileWidth, tileHeight)), true);
+            bool copied = padded.copy(source, sf::Vector2u(dstX, dstY), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(tileWidth, tileHeight)), true);
 
             for (int i = 0; i < pad; ++i) {
-                padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(1, tileHeight)), true);
-                padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY), sf::Vector2i(1, tileHeight)), true);
+                copied = padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(1, tileHeight)), true);
+                copied = padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY), sf::Vector2i(1, tileHeight)), true);
             }
             for (int i = 0; i < pad; ++i) {
-                padded.copy(source, sf::Vector2u(dstX, dstY - 1 - i), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(tileWidth, 1)), true);
-                padded.copy(source, sf::Vector2u(dstX, dstY + tileHeight + i), sf::IntRect(sf::Vector2i(srcX, srcY + tileHeight - 1), sf::Vector2i(tileWidth, 1)), true);
+                copied = padded.copy(source, sf::Vector2u(dstX, dstY - 1 - i), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(tileWidth, 1)), true);
+                copied = padded.copy(source, sf::Vector2u(dstX, dstY + tileHeight + i), sf::IntRect(sf::Vector2i(srcX, srcY + tileHeight - 1), sf::Vector2i(tileWidth, 1)), true);
             }
             for (int i = 0; i < pad; ++i) {
                 for (int j = 0; j < pad; ++j) {
                     // Top-left corner
-                    padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY - 1 - j), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(1, 1)), true);
+                    copied = padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY - 1 - j), sf::IntRect(sf::Vector2i(srcX, srcY), sf::Vector2i(1, 1)), true);
                     // Top-right corner
-                    padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY - 1 - j), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY), sf::Vector2i(1, 1)), true);
+                    copied = padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY - 1 - j), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY), sf::Vector2i(1, 1)), true);
                     // Bottom-left corner
-                    padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY + tileHeight + j), sf::IntRect(sf::Vector2i(srcX, srcY + tileHeight - 1), sf::Vector2i(1, 1)), true);
+                    copied = padded.copy(source, sf::Vector2u(dstX - 1 - i, dstY + tileHeight + j), sf::IntRect(sf::Vector2i(srcX, srcY + tileHeight - 1), sf::Vector2i(1, 1)), true);
                     // Bottom-right corner
-                    padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY + tileHeight + j), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY + tileHeight - 1), sf::Vector2i(1, 1)), true);
+                    copied = padded.copy(source, sf::Vector2u(dstX + tileWidth + i, dstY + tileHeight + j), sf::IntRect(sf::Vector2i(srcX + tileWidth - 1, srcY + tileHeight - 1), sf::Vector2i(1, 1)), true);
                 }
             }
 
@@ -189,6 +181,6 @@ sf::Texture CreatePaddedTexture(
     }
 
     sf::Texture tex;
-    tex.loadFromImage(padded);
+    bool loaded = tex.loadFromImage(padded);
     return tex;
 }

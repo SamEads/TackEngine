@@ -29,8 +29,8 @@ public:
         return frames.size();
     }
 
-    sol::table getUVs();
-    sol::table getTexelSize();
+    std::tuple<float, float, float, float> getUVs();
+    std::tuple<float, float> getTexelSize();
 
     void drawOrigin(
         sf::RenderTarget& target,

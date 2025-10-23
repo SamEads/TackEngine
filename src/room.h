@@ -35,6 +35,8 @@ public:
 
 class Room {
 public:
+    static void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+
     ObjectId currentId = 0;
     std::vector<std::unique_ptr<Tilemap>> tilemaps;
     std::vector<std::unique_ptr<Background>> backgrounds;
@@ -162,7 +164,7 @@ public:
         return sol::make_object(lua, sol::lua_nil);
     }
 
-    sol::table objectGetList(Object* baseType);
+    std::vector<Object::Reference> objectGetList(Object* baseType);
 
     sol::object getObject(Object* baseType) {
         if (baseType == NULL) {
