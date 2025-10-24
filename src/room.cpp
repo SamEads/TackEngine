@@ -35,7 +35,7 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
 
         // Objects & instances
         "instance_create", &Room::instanceCreateScript,
-        "instance_exists", &Room::instanceExists,
+        "instance_exists", &Room::instanceExistsScript,
         "instance_destroy", &Room::instanceDestroyScript,
         "object_count", &Room::objectCount,
         "object_get", &Room::getObject,
@@ -56,7 +56,7 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
         sol::meta_function::new_index,  &Room::setKVP
     );
 
-    for (auto& it : std::filesystem::directory_iterator(assets / "rooms")) {
+    for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "rooms")) {
         if (!it.is_directory()) {
             continue;
         }
@@ -72,8 +72,7 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
     }
 }
 
-Room::Room(sol::state &lua, const RoomReference &room) : lua(lua)
-{
+Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
     auto& game = Game::get();
     std::filesystem::path jsonPath = room.p / "data.json";
 
@@ -96,7 +95,7 @@ Room::Room(sol::state &lua, const RoomReference &room) : lua(lua)
                 std::string objectIndex = i["object_index"];
                 float x = i["x"];
                 float y = i["y"];
-                auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<std::unique_ptr<Object>&>());
+                auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<Object*>());
                 obj->xScale = i["scale_x"];
                 obj->yScale = i["scale_y"];
                 obj->imageAngle = i["rotation"];

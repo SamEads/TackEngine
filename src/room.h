@@ -180,6 +180,18 @@ public:
         return sol::make_object(lua, sol::lua_nil);
     }
 
+    bool instanceExistsScript(sol::object obj) {
+        if (obj == sol::lua_nil) {
+            return false;
+        }
+        if (obj.is<Object::Reference>()) {
+            Object::Reference* ref = obj.as<Object::Reference*>();
+            int refId = ref->id;
+            return ids.find(refId) != ids.end();
+        }
+        return false;
+    }
+
     bool instanceExists(Object::Reference reference) {
         int refId = reference.id;
         return ids.find(refId) != ids.end();
@@ -373,7 +385,7 @@ public:
         return Object::Reference { -1, sol::make_object(lua, sol::lua_nil) };
     }
 
-    Object::Reference instanceCreateScript(float x, float y, float depth, std::unique_ptr<Object>& baseObject) {
+    Object::Reference instanceCreateScript(float x, float y, float depth, Object* baseObject) {
         Object* ptr = instanceCreate(x, y, depth, baseObject);
 
         auto it = ptr->kvp.find("create");
@@ -390,9 +402,9 @@ public:
         return ptr->makeReference();
     }
 
-    Object* instanceCreate(float x, float y, float depth, std::unique_ptr<Object>& baseObject) {
+    Object* instanceCreate(float x, float y, float depth, Object* baseObject) {
         std::unique_ptr<Object> copiedObject = ObjectManager::get().make(lua, baseObject);
-        copiedObject->self = baseObject.get();
+        copiedObject->self = baseObject;
         copiedObject->id = currentId++;
         copiedObject->x = x;
         copiedObject->y = y;

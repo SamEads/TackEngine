@@ -69,11 +69,12 @@ void SoundManager::shutdown() {
 	}
 }
 
-bool SoundManager::isPlaying(std::string sound) {
+bool SoundManager::isPlaying(const ScriptSound& sound) {
 	std::lock_guard<std::mutex> s(mutex);
 
-	auto it = sounds.find(sound);
-	if (sounds.find(sound) != sounds.end()) {
+	std::string sndStr = sound.file.string();
+	auto it = sounds.find(sndStr);
+	if (sounds.find(sndStr) != sounds.end()) {
 		auto& vec = (*it).second.sounds;
 		for (auto& sound : vec) {
 			float volume = sound.sound->getVolume();
@@ -93,7 +94,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
     );
 
     // Sounds
-    for (auto& it : std::filesystem::directory_iterator(assets / "sounds")) {
+    for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "sounds")) {
         if (!it.is_directory()) continue;
 
         std::string soundName = it.path().filename().string();
@@ -104,7 +105,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
         std::string extension = j["extension"].get<std::string>();
 
         ScriptSound scriptSound;
-        scriptSound.file = std::filesystem::path(soundName) / std::string("sound" + extension);
+        scriptSound.file = it.path() / std::string("sound" + extension);
         scriptSound.volume = j["volume"];
 
         lua[soundName] = scriptSound;
@@ -112,36 +113,38 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 
 	lua.create_named_table("sound");
     lua["sound"]["is_playing"] = [&](const ScriptSound& sound) {
-        return isPlaying(sound.file.string());
+        return isPlaying(sound);
     };
     lua["sound"]["play"] = [&](const ScriptSound& sound, float gain, float pitch) {
-        play(sound.file.string(), pitch, sound.volume * gain);
+        play(sound, pitch, sound.volume * gain);
     };
     lua["sound"]["stop"] = [&](const ScriptSound& sound) {
-        stop(sound.file.string());
+        stop(sound);
     };
 }
 
-void SoundManager::play(std::string sound, float pitch, float volume, bool loop) {
+void SoundManager::play(const ScriptSound& sound, float pitch, float volume, bool loop) {
 	std::lock_guard<std::mutex> s(mutex);
 
-	if (sounds.find(sound) == sounds.end()) {
-		bool loadedSound = sounds[sound].buffer.loadFromFile(std::filesystem::path("assets") / "sounds" / sound);
+	const std::string soundStr = sound.file.string();
+	if (sounds.find(soundStr) == sounds.end()) {
+		bool loadedSound = sounds[soundStr].buffer.loadFromFile(sound.file);
 	}
 
-	auto& buf = sounds[sound].buffer;
-	sounds[sound].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf) });
-	sounds[sound].sounds.back().timer.restart();
-	sounds[sound].sounds.back().sound->play();
-	sounds[sound].sounds.back().sound->setPitch(pitch);
-	sounds[sound].sounds.back().sound->setVolume(volume * 100.0f);
-	sounds[sound].sounds.back().sound->setLooping(loop);
+	auto& buf = sounds[soundStr].buffer;
+	sounds[soundStr].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf) });
+	sounds[soundStr].sounds.back().timer.restart();
+	sounds[soundStr].sounds.back().sound->play();
+	sounds[soundStr].sounds.back().sound->setPitch(pitch);
+	sounds[soundStr].sounds.back().sound->setVolume(volume * 100.0f);
+	sounds[soundStr].sounds.back().sound->setLooping(loop);
 }
 
-void SoundManager::stop(std::string sound) {
+void SoundManager::stop(const ScriptSound& sound) {
 	std::lock_guard<std::mutex> s(mutex);
 
-	auto it = sounds.find(sound);
+	const std::string soundStr = sound.file.string();
+	auto it = sounds.find(soundStr);
 	if (it != sounds.end()) {
 		auto& vec = (*it).second.sounds;
 		for (auto& sound : vec) {
@@ -153,10 +156,11 @@ void SoundManager::stop(std::string sound) {
 	}
 }
 
-void SoundManager::fadeOut(std::string sound, float seconds) {
+void SoundManager::fadeOut(const ScriptSound& sound, float seconds) {
 	std::lock_guard<std::mutex> s(mutex);
 
-	auto it = sounds.find(sound);
+	const std::string soundStr = sound.file.string();
+	auto it = sounds.find(soundStr);
 	if (it != sounds.end()) {
 		auto& vec = (*it).second.sounds;
 		for (auto& sound : vec) {

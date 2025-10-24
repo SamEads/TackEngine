@@ -56,7 +56,7 @@ static sol::object ObjectCreate(
 
     baseClasses[identifier] = ObjectManager::ScriptedInfo {
         lua[identifier],
-        [](std::unique_ptr<Object>& original) { return std::make_unique<Object>(*(original.get())); }
+        [](Object* original) { return std::make_unique<Object>(*original); }
     };
 
 
@@ -89,7 +89,7 @@ static sol::object ObjectCreateRecursive(
         return sol::object(sol::lua_nil);
     }
 
-    std::filesystem::path p = assets / "objects" / (identifier + ".json");
+    std::filesystem::path p = assets / "managed" / "objects" / (identifier + ".json");
     if (!std::filesystem::exists(p)) {
         return sol::object(sol::lua_nil);
     }
@@ -139,15 +139,16 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         "image_yscale", &Object::yScale,
         "xprevious",    sol::readonly(&Object::xPrev),
         "yprevious",    sol::readonly(&Object::yPrev),
-        "bbox_left",    sol::property(&Object::bboxLeft, &Object::trySet),
-        "bbox_right",   sol::property(&Object::bboxRight, &Object::trySet),
-        "bbox_bottom",  sol::property(&Object::bboxBottom, &Object::trySet),
-        "bbox_top",     sol::property(&Object::bboxTop, &Object::trySet),
+        "object_index", sol::readonly(&Object::self),
+        "bbox_left",    sol::readonly_property(&Object::bboxLeft),
+        "bbox_right",   sol::readonly_property(&Object::bboxRight),
+        "bbox_bottom",  sol::readonly_property(&Object::bboxBottom),
+        "bbox_top",     sol::readonly_property(&Object::bboxTop),
+        "bbox_top",     sol::readonly_property(&Object::bboxTop),
         "get_id",       &Object::makeReference,
         "depth",        &Object::depth,
         "visible",      &Object::visible,
         "extends",      &Object::extends,
-        // "super",        &Object::parent,
         sol::meta_function::index,      &Object::getDyn,
         sol::meta_function::new_index,  &Object::setDyn
     );
@@ -173,7 +174,7 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         return ObjectCreate(identifier, nullptr, lua, assets, scriptPaths);
     };
 
-    for (auto& it : std::filesystem::directory_iterator(assets / "objects")) {
+    for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "objects")) {
         if (!it.is_regular_file()) {
             continue;
         }

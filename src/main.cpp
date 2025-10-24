@@ -61,7 +61,7 @@ int main() {
     }
 
     std::filesystem::path p = std::filesystem::path(lua["GM_project_directory"].get<std::string>());
-    GMConvert(p, "assets");
+    GMConvert(p, "assets/managed");
 
     InitializeLuaEnvironment(lua);
 
@@ -137,7 +137,6 @@ int main() {
         Game::get().fps = 1.f / delta;
 
         ++frame;
-
     }
 
     ObjectManager::get().baseClasses.clear();

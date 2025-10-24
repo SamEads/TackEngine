@@ -268,7 +268,7 @@ public:
     class ScriptedInfo {
     public:
         sol::object object;
-        std::function<std::unique_ptr<Object>(std::unique_ptr<Object>&)> create;
+        std::function<std::unique_ptr<Object>(Object*)> create;
     };
     std::unordered_map<std::string, ScriptedInfo> baseClasses;
 
@@ -277,15 +277,15 @@ public:
         return om;
     }
 
-    std::unique_ptr<Object> make(sol::state& lua, std::unique_ptr<Object>& object) {
+    std::unique_ptr<Object> make(sol::state& lua, Object* object) {
         if (object != NULL) {
 
             auto& list = baseClasses;
 
             auto it = std::find_if(list.begin(), list.end(), [&object](const std::pair<std::string, ScriptedInfo>& p) {
                 sol::object obj = p.second.object;
-                auto& uniquePtr = obj.as<std::unique_ptr<Object>&>();
-                return uniquePtr.get() == object.get();
+                auto uniquePtr = obj.as<Object*>();
+                return uniquePtr == object;
             });
 
             if (it != list.end()) {

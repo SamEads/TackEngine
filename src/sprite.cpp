@@ -51,42 +51,111 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
     bool loadedWhite = whiteTexture.loadFromImage(white);
     if (!loadedWhite) {}
 
-    for (auto& it : std::filesystem::directory_iterator(assets / "sprites")) {
-        if (!it.is_directory()) continue;
+    auto paths = {
+        assets / "sprites",
+        assets / "managed" / "sprites",
+    };
+    for (const auto& path : paths) {
+        for (auto& it : std::filesystem::directory_iterator(path)) {
+            bool isPng = false;
+            if (!it.is_directory()) {
+                if (it.path().extension() != ".png") {
+                    continue;
+                }
+                else {
+                    isPng = true;
+                }
+            }
+            int pad = 1;
+            sf::Image src;
+            int frameCount = 0;
+            sf::Texture tex;
+            std::vector<SpriteIndex::SpriteFrame> frameCoords;
+            int frameCountX = -1, frameCountY = -1;
+            std::string identifier = it.path().filename().replace_extension("").string();
+            if (sprites.find(identifier) != sprites.end()) {
+                continue;
+            }
+            SpriteIndex& spr = sprites[identifier];
 
-        std::filesystem::path p = it.path();
-        std::string identifier = p.filename().string();
-        if (sprites.find(identifier) != sprites.end()) {
-            continue;
+            if (!isPng) {
+                std::ifstream i(it.path() / "data.json");
+                json j = json::parse(i);
+                spr.width = j["size"][0].get<int>();
+                spr.height = j["size"][1].get<int>();
+
+                bool imageLoaded = src.loadFromFile(it.path() / "frames.png");
+
+                int offByWidth = src.getSize().x / spr.width;
+                int offByHeight = src.getSize().y / spr.height;
+                frameCountX = offByWidth;
+                frameCountY = offByHeight;
+
+                std::vector<float> hitbox = j["hitbox"];
+                spr.hitbox.position = { hitbox[0], hitbox[1] };
+                spr.hitbox.size.x = hitbox[2] - hitbox[0] + 1.0f;
+                spr.hitbox.size.y = hitbox[3] - hitbox[1] + 1.0f;
+
+                spr.originX = j["origin"][0].get<int>();
+                spr.originY = j["origin"][1].get<int>();
+
+                tex = CreatePaddedTexture(src, spr.width, spr.height, frameCountX, frameCountY, pad, 0, 0, 0, 0, &frameCoords);
+            }
+            else {
+                bool imageLoaded = src.loadFromFile(it.path().string());
+                auto size = src.getSize();
+                bool autoSize = true;
+                bool autoHitbox = true;
+
+                auto jPath = it.path().parent_path() / std::string(identifier + ".json");
+                if (std::filesystem::exists(jPath)) {
+                    std::ifstream i(jPath);
+                    json j = json::parse(i);
+                    if (j.contains("size") && j["size"].size() == 2) {
+                        autoSize = false;
+                        spr.width = j["size"][0].get<int>();
+                        spr.height = j["size"][1].get<int>();
+
+                        int offByWidth = src.getSize().x / spr.width;
+                        int offByHeight = src.getSize().y / spr.height;
+                        frameCountX = offByWidth;
+                        frameCountY = offByHeight;
+                    }
+                    if (j.contains("hitbox") && j["hitbox"].size() == 4) {
+                        autoHitbox = false;
+                        std::vector<float> hitbox = j["hitbox"];
+                        spr.hitbox.position = { hitbox[0], hitbox[1] };
+                        spr.hitbox.size.x = hitbox[2] - hitbox[0] + 1.0f;
+                        spr.hitbox.size.y = hitbox[3] - hitbox[1] + 1.0f;
+                    }
+                    if (j.contains("origin") && j["orig in"].size() == 2) {
+                        spr.originX = j["origin"][0].get<int>();
+                        spr.originY = j["origin"][1].get<int>();
+                    }
+                }
+                
+                if (autoSize) {
+                    spr.width = spr.height = size.y;
+                    frameCountX = size.x / size.y;
+                }
+                if (autoHitbox) {
+                    spr.hitbox.position = { 0, 0 };
+                    spr.hitbox.size = { static_cast<float>(spr.width), static_cast<float>(spr.height) };
+                }
+
+                if (frameCountY == -1) {
+                    tex = CreatePaddedTexture(src, spr.width, spr.height, frameCountX, 1, pad, 0, 0, 0, 0, &frameCoords);
+                }
+                else {
+                    tex = CreatePaddedTexture(src, spr.width, spr.height, frameCountX, frameCountY, pad, 0, 0, 0, 0, &frameCoords);
+                }
+            }
+
+            spr.texture = tex;
+            spr.sprite = std::make_unique<sf::Sprite>(spr.texture);
+            spr.frames = frameCoords;
+            lua[identifier] = &spr;
         }
-
-        std::ifstream i(p / "data.json");
-        json j = json::parse(i);
-
-        SpriteIndex& spr = sprites[identifier];
-
-        sf::Image src;
-        bool framesLoaded = src.loadFromFile((p / "frames.png").string());
-
-        int pad = 1;
-        spr.width = j["width"];
-        spr.height = j["height"];
-        int frameCount = j["frames"];
-        std::vector<SpriteIndex::SpriteFrame> frameCoords;
-        sf::Texture tex = CreatePaddedTexture(src, spr.width, spr.height, frameCount, 1, pad, 0, 0, 0, 0, &frameCoords);
-        spr.texture = tex;
-        spr.sprite = std::make_unique<sf::Sprite>(spr.texture);
-        spr.frames = frameCoords;
-
-        spr.originX = j["origin_x"];
-        spr.originY = j["origin_y"];
-
-        spr.hitbox.position.x = j["bbox_left"];
-        spr.hitbox.position.y = j["bbox_top"];
-        spr.hitbox.size.x = j["bbox_right"].get<float>() - spr.hitbox.position.x + 1.0f;
-        spr.hitbox.size.y = j["bbox_bottom"].get<float>() - spr.hitbox.position.y + 1.0f;
-
-        lua[identifier] = &spr;
     }
 
     // GFX
@@ -121,9 +190,11 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex, { xscale, yscale }, MakeColor(color), rot);
     };
 
-    gfx["draw_sprite_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, float rot, sol::table color) {
+    gfx["draw_sprite_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, bool keepSpriteOriginPosition, float rot, sol::table color) {
         if (spriteIndex == nullptr) return;
-        spriteIndex->drawOrigin(*Game::get().currentRenderer, { x - spriteIndex->originX + originX, y - spriteIndex->originY + originY }, imageIndex, { xscale, yscale }, { originX, originY }, MakeColor(color), rot);
+        spriteIndex->drawOrigin(*Game::get().currentRenderer,
+            (keepSpriteOriginPosition) ? sf::Vector2f(x - spriteIndex->originX + originX, y - spriteIndex->originY + originY) : sf::Vector2f(x, y),
+            imageIndex, { xscale, yscale }, { originX, originY }, MakeColor(color), rot);
     };
 }
 

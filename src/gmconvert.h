@@ -339,17 +339,12 @@ public:
 		if (writeData) {
 			AddMessage("Writing " + name);
 			json j = {
-				{ "name", name },
-				{ "width", width },
-				{ "height", height },
-				{ "origin_x", originX },
-				{ "origin_y", originY },
-				{ "bbox_left", bboxLeft },
-				{ "bbox_right", bboxRight },
-				{ "bbox_top", bboxTop },
-				{ "bbox_bottom", bboxBottom }
+				// { "name", name },
+				{ "size", { width, height } },
+				{ "origin", { originX, originY } },
+				{ "hitbox", { bboxLeft, bboxTop, bboxRight, bboxBottom } }
 			};
-			j["frames"] = frames.size();
+			// j["frames"] = frames.size();
 			std::ofstream o(path / "data.json");
 			o << std::setw(4) << j;
 		}
@@ -886,7 +881,8 @@ void GameMakerProject::parse() {
 		for (auto& str : v) {
 			auto it = std::find(objs.begin(), objs.end(), str);
 			if (it == objs.end()) {
-				std::filesystem::remove(assetsPath / "objects" / std::string(str + ".json"));
+				std::filesystem::remove(assetsPath / k / std::string(str + ".json"));
+				std::filesystem::remove_all(assetsPath / k / std::string(str));
 			}
 		}
 	}

@@ -20,7 +20,7 @@ public:
 	ScriptSound* currentSound;
 	float currentVolume = 1.0f;
 	void play(ScriptSound& sound) {
-		bool result = m.openFromFile(std::filesystem::path("assets") / "sounds" / sound.file);
+		bool result = m.openFromFile(sound.file);
 		m.setLooping(true);
 		m.play();
 		m.setVolume(sound.volume * 100.0f);
@@ -95,12 +95,12 @@ public:
 		sf::Clock timer;
 	};
 	std::vector<FadeOutSound> fadeOutSounds;
-	void play(std::string sound, float pitch = 1.0f, float volume = 1.0f, bool loop = false);
-	void stop(std::string sound);
-	void fadeOut(std::string sound, float seconds);
+	void play(const ScriptSound& sound, float pitch = 1.0f, float volume = 1.0f, bool loop = false);
+	void stop(const ScriptSound& sound);
+	void fadeOut(const ScriptSound& sound, float seconds);
 	void update();
 	void shutdown();
-	bool isPlaying(std::string sound);
+	bool isPlaying(const ScriptSound& sound);
 	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 
     static SoundManager& get() {

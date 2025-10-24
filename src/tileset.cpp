@@ -5,7 +5,7 @@
 void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
     TilesetManager& tsMgr = TilesetManager::get();
     SpriteManager& sprMgr = SpriteManager::get();
-    for (auto& it : std::filesystem::directory_iterator(assets / "tilesets")) {
+    for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "tilesets")) {
         if (!it.is_regular_file()) {
             continue;
         }
@@ -25,7 +25,7 @@ void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path&
         sf::Image src;
         std::string n = j["name"];
         SpriteManager::get().sprites[j["sprite"]] = {};
-        bool loaded = src.loadFromFile(assets / "sprites" / j["sprite"].get<std::string>() / "frames.png");
+        bool loaded = src.loadFromFile(assets / "managed" / "sprites" / j["sprite"].get<std::string>() / "frames.png");
         ts.tileCountX = (src.getSize().x - ts.offsetX + ts.separationX) / (ts.tileWidth + ts.separationX);
         ts.tileCountY = (src.getSize().y - ts.offsetY + ts.separationY) / (ts.tileHeight + ts.separationY);
         ts.tex = CreatePaddedTexture(
