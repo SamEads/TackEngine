@@ -67,7 +67,7 @@ public:
         static MusicManager musMgr;
         return musMgr;
     }
-	void initializeLua(sol::state& lua);
+	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 };
 
 class SoundManager {

@@ -93,11 +93,39 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
         "Sound", sol::no_constructor
     );
 
+	// Music
+    for (auto& it : std::filesystem::directory_iterator(assets / "music")) {
+        if (!it.is_regular_file()) continue;
+
+        std::string soundName = it.path().filename().replace_extension("").string();
+
+        ScriptSound scriptSound;
+        scriptSound.file = it.path();
+        scriptSound.volume = 1.0f;
+
+        lua[soundName] = scriptSound;
+	}
+
     // Sounds
+	for (auto& it : std::filesystem::directory_iterator(assets / "sounds")) {
+        if (!it.is_regular_file()) continue;
+
+        std::string soundName = it.path().filename().replace_extension("").string();
+
+        ScriptSound scriptSound;
+        scriptSound.file = it.path();
+        scriptSound.volume = 1.0f;
+
+        lua[soundName] = scriptSound;
+	}
+
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "sounds")) {
         if (!it.is_directory()) continue;
 
         std::string soundName = it.path().filename().string();
+		if (lua[soundName] != sol::lua_nil) {
+			continue;
+		}
 
         auto data = it.path() / "data.json";
         std::ifstream i(data);
@@ -172,8 +200,9 @@ void SoundManager::fadeOut(const ScriptSound& sound, float seconds) {
 	}
 }
 
-void MusicManager::initializeLua(sol::state& lua) {
+void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
 	lua.create_named_table("music");
+
     lua["music"]["play"] = [&](ScriptSound& sound) {
 		play(sound);
     };
@@ -188,6 +217,12 @@ void MusicManager::initializeLua(sol::state& lua) {
     };
     lua["music"]["get_position"] = [&]() {
         return getPosition();
+    };
+	lua["music"]["set_loops"] = [&]() {
+        m.setLooping(false);
+    };
+	lua["music"]["is_playing"] = [&]() {
+        return m.getStatus() == sf::Music::Status::Playing;
     };
     lua["music"]["set_position"] = [&](float position) {
         setPosition(position);

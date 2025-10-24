@@ -41,7 +41,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
     ObjectManager::get().initializeLua(lua, assets);
     FontManager::get().initializeLua(lua, assets);
     SoundManager::get().initializeLua(lua, assets);
-    MusicManager::get().initializeLua(lua);
+    MusicManager::get().initializeLua(lua, assets);
     ShaderManager::get().initializeLua(lua);
     Keys::get().initializeLua(lua);
     Game::get().initializeLua(lua, assets);
@@ -54,13 +54,13 @@ void InitializeLuaEnvironment(sol::state& lua) {
 int main() {
     sol::state& lua = Game::get().lua;
 
-    auto res = lua.safe_script_file("assets/gmconvert.lua");
+    auto res = lua.safe_script_file("assets/managed/gmconvert.lua");
     if (!res.valid()) {
         sol::error e = res;
         std::cout << e.what() << "\n";
     }
 
-    std::filesystem::path p = std::filesystem::path(lua["GM_project_directory"].get<std::string>());
+    std::filesystem::path p = std::filesystem::path(lua["project_directory"].get<std::string>());
     GMConvert(p, "assets/managed");
 
     InitializeLuaEnvironment(lua);

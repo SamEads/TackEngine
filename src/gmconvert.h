@@ -23,43 +23,23 @@ class GameMakerProject;
 class GMRoom;
 
 struct GMColor {
-	uint8_t r, g, b, a;
+	uint8_t value[4];
 };
 
-static GMColor NumberToColor(double number) {
-	std::array<double, 8> quotients{};
-	std::array<int, 8> remainders{};
-	quotients[0] = number / 16.0;
-	remainders[0] = static_cast<long>(number) % 16;
+static GMColor NumberToColor(uint32_t number) {
+	std::array<int, 8> remainders {};
+	remainders[0] = static_cast<uint32_t>(number) % 16;
+	double quotient = number / 16.0;
 
 	for (int i = 1; i < 8; ++i) {
-		quotients[i] = quotients[i - 1] / 16.0;
-		remainders[i] = static_cast<long>(quotients[i - 1]) % 16;
+		remainders[i] = static_cast<uint32_t>(quotient) % 16;
+		quotient /= 16.0;
 	}
 
-	GMColor c{};
-
-	for (int i = 3; i >= 0; --i) {
-		uint8_t colval = static_cast<uint8_t>(remainders[(i * 2) + 1] * std::pow(16, 1)
-			+ remainders[i * 2] * std::pow(16, 0));
-		switch (i) {
-		case 3:
-			// alpha
-			c.a = colval;
-			continue;
-		case 2:
-			// b
-			c.b = colval;
-			continue;
-		case 1:
-			// g
-			c.g = colval;
-			continue;
-		case 0:
-			// r
-			c.r = colval;
-			continue;
-		}
+	GMColor c {};
+	for (int i = 0; i < 4; ++i) {
+		// get top and bottom bits from iteration to form num
+		c.value[i] = static_cast<uint8_t>(remainders[(i * 2) + 1] * std::pow(16, 1) + remainders[i * 2] * std::pow(16, 0));
 	}
 	return c;
 }
@@ -696,7 +676,7 @@ public:
 			instance->hasCreationCode = jInst["hasCreationCode"];
 			instance->imageSpeed = jInst["imageSpeed"];
 			instance->imageSpeed = jInst["imageSpeed"];
-			instance->color = NumberToColor(jInst["colour"]);
+			instance->color = NumberToColor(jInst["colour"].get<uint32_t>());
 			instance->properties = json::array();
 			for (auto& p : jInst["properties"]) {
 				json object = json::object();
@@ -717,17 +697,23 @@ public:
 		for (auto& i : instances) {
 			json o = json::object();
 			o["object_index"] = i->object;
-			o["gm_uuid"] = i->uuid;
-			o["creation_code"] = i->hasCreationCode;
-			o["rotation"] = i->rotation;
-			o["scale_x"] = i->scaleX;
-			o["scale_y"] = i->scaleY;
+			//o["gm_uuid"] = i->uuid;
+			//o["creation_code"] = i->hasCreationCode;
+			if (i->rotation != 0) {
+				o["rotation"] = i->rotation;
+			}
+			if (i->scaleX != 1) {
+				o["scale_x"] = i->scaleX;
+			}
+			if (i->scaleY != 1) {
+				o["scale_y"] = i->scaleY;
+			}
 			o["x"] = i->x;
 			o["y"] = i->y;
 			o["image_index"] = i->imageIndex;
 			o["image_speed"] = i->imageSpeed;
 			o["properties"] = i->properties;
-			o["color"] = { i->color.r, i->color.g, i->color.b, i->color.a };
+			o["color"] = { i->color.value[0], i->color.value[1], i->color.value[2], i->color.value[3] };
 			j["instances"].push_back(o);
 
 			if (i->hasCreationCode) {
@@ -771,7 +757,7 @@ public:
 	std::string sprite;
 	void read(json& j, GameMakerProject* proj) override {
 		GMRLayer::read(j, proj);
-		color = NumberToColor(j["colour"].get<double>());
+		color = NumberToColor(j["colour"].get<uint32_t>());
 		x = j["x"];
 		y = j["y"];
 		tiledX = j["htiled"];
@@ -803,7 +789,7 @@ public:
 		else {
 			j["sprite"] = sprite;
 		}
-		j["color"] = { color.r, color.g, color.b, color.a };
+		j["color"] = { color.value[0], color.value[1], color.value[2], color.value[3] };
 		return true;
 	}
 };
@@ -843,20 +829,13 @@ void GameMakerProject::parse() {
 
 	auto start = std::chrono::high_resolution_clock::now();
 
-	std::vector<std::string> paths = {
-		"rooms",
-		"objects",
-		"sprites",
-		"tilesets",
-		"sounds"
-	};
-
+	std::vector<std::string> paths = { "rooms", "objects", "sprites", "tilesets", "sounds" };
 
 	if (!std::filesystem::exists(assetsPath)) {
 		std::filesystem::create_directory(assetsPath);
 	}
-	else if (std::filesystem::exists(assetsPath / "managed.json")) {
-		std::ifstream i(assetsPath / "managed.json");
+	else if (std::filesystem::exists(assetsPath / "assets.json")) {
+		std::ifstream i(assetsPath / "assets.json");
 		json j = json::parse(i);
 		for (auto& obj : j.get<json::object_t>()) {
 			lastManaged[obj.first] = obj.second.get<std::vector<std::string>>();

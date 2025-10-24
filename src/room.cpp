@@ -96,9 +96,9 @@ Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
                 float x = i["x"];
                 float y = i["y"];
                 auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<Object*>());
-                obj->xScale = i["scale_x"];
-                obj->yScale = i["scale_y"];
-                obj->imageAngle = i["rotation"];
+                obj->xScale = i.value("scale_x", 1);
+                obj->yScale = i.value("scale_y", 1);
+                obj->imageAngle = i.value("rotation", 0);
                 obj->imageIndex = i["image_index"];
                 obj->imageSpeedMod = i["image_speed"];
 
