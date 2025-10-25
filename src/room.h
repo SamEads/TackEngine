@@ -175,7 +175,7 @@ public:
             return optr->extends(baseType);
         });
         if (it != ids.end()) {
-            return sol::make_object(lua, it->second->makeReference());
+            return sol::make_object(lua, it->second->MyReference);
         }
         return sol::make_object(lua, sol::lua_nil);
     }
@@ -197,7 +197,7 @@ public:
         return ids.find(refId) != ids.end();
     }
 
-    std::vector<Object::Reference> collisionRectangleList(Object* caller, float x1, float y1, float x2, float y2, std::unique_ptr<Object>& type) {
+    std::vector<Object::Reference> collisionRectangleList(const Object::Reference& caller, float x1, float y1, float x2, float y2, std::unique_ptr<Object>& type) {
         if (type == nullptr) {
             return {};
         }
@@ -216,37 +216,15 @@ public:
                 otherRect.size.y = instance->bboxBottom() - otherRect.position.y;
                 auto intersection = rect.findIntersection(otherRect);
                 if (intersection.has_value()) {
-                    vec.push_back(i.second->makeReference());
+                    vec.push_back(i.second->MyReference);
                 }
             }
         }
 
         return vec;
-
-        /*
-        float width = x2 - x1;
-        float height = y2 - y1;
-        std::vector<sf::Vector2f> callerPts = {
-            { x1, y1 }, { x1 + width, y1 },
-            { x1 + width, y1 + width }, { x1, y1 + width }
-        };
-
-        std::vector<Object::Reference> vec {};
-
-        for (auto& i : ids) {
-            if (i.second->extends(type.get())) {
-                auto answer = polygonsIntersect(callerPts, i.second->getPoints());
-                if (answer.intersect) {
-                    vec.push_back(i.second->makeReference());
-                }
-            }
-        }
-
-        return vec;
-        */
     }
 
-    sol::object collisionRectangleScript(Object* caller, float x1, float y1, float x2, float y2, sol::object type, sol::variadic_args va) {
+    sol::object collisionRectangleScript(const Object::Reference& caller, float x1, float y1, float x2, float y2, sol::object type, sol::variadic_args va) {
         float width = x2 - x1;
         float height = y2 - y1;
         sf::FloatRect rect = { { x1, y1 }, { width, height } };
@@ -268,7 +246,7 @@ public:
             
             // Intersection vs none
             if (intersection.has_value()) {
-                return sol::make_object(lua, r);
+                return sol::make_object(lua, instance->MyReference);
             }
             else {
                 return sol::make_object(lua, sol::lua_nil);
@@ -277,10 +255,10 @@ public:
         else {
             // Object
             auto& baseType = type.as<std::unique_ptr<Object>&>();
-            Object* ignore = nullptr;
+            const Object* ignore = nullptr;
             if (va.size() > 0) {
                 if (va[0].get<bool>() == true) {
-                    ignore = caller;
+                    ignore = caller.object.as<Object*>();
                 }
             }
             for (auto& i : ids) {
@@ -292,7 +270,7 @@ public:
                         otherRect.size.y = instance->bboxBottom() - otherRect.position.y;
                         auto intersection = rect.findIntersection(otherRect);
                         if (intersection.has_value()) {
-                            return sol::make_object(lua, i.second->makeReference());
+                            return sol::make_object(lua, i.second->MyReference);
                         }
                     }
                 }
@@ -377,7 +355,7 @@ public:
             if (i.second->extends(baseType.get())) {
                 auto answer = polygonsIntersect(callerPts, i.second->getPoints());
                 if (answer.intersect) {
-                    return i.second->makeReference();
+                    return i.second->MyReference;
                 }
             }
         }
@@ -399,13 +377,14 @@ public:
         ptr->xPrev = ptr->x;
         ptr->yPrev = ptr->y;
 
-        return ptr->makeReference();
+        return ptr->MyReference;
     }
 
     Object* instanceCreate(float x, float y, float depth, Object* baseObject) {
         std::unique_ptr<Object> copiedObject = ObjectManager::get().make(lua, baseObject);
         copiedObject->self = baseObject;
         copiedObject->id = currentId++;
+        copiedObject->MyReference = { copiedObject->id, sol::make_object(lua, copiedObject.get()) };
         copiedObject->x = x;
         copiedObject->y = y;
         copiedObject->depth = depth;

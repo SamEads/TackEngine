@@ -296,7 +296,7 @@ std::vector<Object::Reference> Room::objectGetList(Object* baseType) {
     std::vector<Object::Reference> v;
     for (auto& i : instances) {
         if (i->extends(baseType)) {
-            v.push_back(i->makeReference());
+            v.push_back(i->MyReference);
         }
     }
     return v;

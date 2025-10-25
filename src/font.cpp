@@ -16,7 +16,6 @@ void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
                 font.fontIndex = sf::Font(fontPath);
                 font.fontIndex.setSmooth(false);
                 lua[fontName] = &fonts[fontName];
-                std::cout << "Loaded font " << fontName << "\n";
             }
         }
     }

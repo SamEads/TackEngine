@@ -23,6 +23,7 @@ FetchContent_MakeAvailable(SFML)
 file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
     "src/*.cpp"
     "src/*.c"
+    "external/sys_info/src/*.cpp"
 )
 
 if(!USE_LUA_JIT)
@@ -38,6 +39,7 @@ target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
     "src/"
     "external/lua/include"
+    "external/sys_info/include"
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE

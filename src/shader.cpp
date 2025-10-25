@@ -8,27 +8,21 @@ void ShaderManager::initializeLua(sol::state& lua) {
     lua["shader"]["add_fragment"] = [&](const std::string& identifier, const std::string& fragment) {
         Shader& s = this->shaders[identifier];
         bool loaded = s.baseShader.loadFromMemory(fragment, sf::Shader::Type::Fragment);
-        if (loaded) {
-            std::cout << "Successfully loaded " << identifier << "\n";
-        }
+        if (loaded) { }
         lua[identifier] = &s;
     };
 
     lua["shader"]["add_vertex"] = [&](const std::string& identifier, const std::string& fragment) {
         Shader& s = this->shaders[identifier];
         bool loaded = s.baseShader.loadFromMemory(fragment, sf::Shader::Type::Vertex);
-        if (loaded) {
-            std::cout << "Successfully loaded " << identifier << "\n";
-        }
+        if (loaded) { }
         lua[identifier] = &s;
     };
 
     lua["shader"]["add"] = [&](const std::string& identifier, const std::string& vertex, const std::string& fragment) {
         Shader& s = this->shaders[identifier];
         bool loaded = s.baseShader.loadFromMemory(vertex, fragment);
-        if (loaded) {
-            std::cout << "Successfully loaded " << identifier << "\n";
-        }
+        if (loaded) { }
         lua[identifier] = &s;
     };
 

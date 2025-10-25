@@ -15,6 +15,8 @@ extern "C" {
 #include "shader.h"
 #include "sound.h"
 #include "font.h"
+#include <ProcessInfo.h>
+#include <SystemInformation.h>
 
 using namespace nlohmann;
 
@@ -64,6 +66,14 @@ int main() {
     GMConvert(p, "assets/managed");
 
     InitializeLuaEnvironment(lua);
+
+    ProcessInfo process;
+    SystemInformation sys_info;
+
+    lua["game"]["get_memory"] = [&process]() {
+        auto memory = process.GetMemoryUsage() / 1'000;
+        return memory;
+    };
 
     SoundManager& sndMgr = SoundManager::get();
     sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
@@ -119,18 +129,41 @@ int main() {
         sf::Sprite renderSprite(Game::get().consoleRenderer->getTexture());
         sf::Vector2u gameSize = Game::get().consoleRenderer->getSize();
 
-        float scaleX = floorf(dispSize.x / (float)gameSize.x);
-        float scaleY = floorf(dispSize.y / (float)gameSize.y);
-        float scale = std::max(1.0f, std::min(scaleX, scaleY));
+        if (game.letterbox && dispSize.x > gameSize.x && dispSize.y > gameSize.y) {
+            float scaleX = floorf(dispSize.x / (float)gameSize.x);
+            float scaleY = floorf(dispSize.y / (float)gameSize.y);
+            float scale = std::max(1.0f, std::min(scaleX, scaleY));
+    
+            renderSprite.setScale({ scale, scale });
+    
+            float offsetX = floorf((dispSize.x - (gameSize.x * scale)) / 2.f);
+            float offsetY = floorf((dispSize.y - (gameSize.y * scale)) / 2.f);
+            renderSprite.setPosition({ offsetX, offsetY });
+        }
+        else {
+            const float ratio = gameSize.x / (float)gameSize.y;
 
-        renderSprite.setScale({ scale, scale });
+            if (dispSize.x >= dispSize.y * ratio) {
+                float scaleY = dispSize.y / (float)gameSize.y;
 
-        float offsetX = floorf((dispSize.x - (gameSize.x * scale)) / 2.f);
-        float offsetY = floorf((dispSize.y - (gameSize.y * scale)) / 2.f);
-        renderSprite.setPosition({ offsetX, offsetY });
+                renderSprite.setScale({ scaleY, scaleY });
+
+                float scaledW = gameSize.x * scaleY;
+                float offsetX = (dispSize.x - scaledW) / 2.0f;
+                renderSprite.setPosition({ offsetX, 0.0f });
+            }
+            else {
+                float scaleX = dispSize.x / (float)gameSize.x;
+
+                renderSprite.setScale({ scaleX, scaleX });
+
+                float scaledH = gameSize.y * scaleX;
+                float offsetY = (dispSize.y - scaledH) / 2.0f;
+                renderSprite.setPosition({ 0.0f, offsetY });
+            }
+        }
 
         window->draw(renderSprite);
-
         window->display();
 
         float delta = clock.restart().asSeconds();

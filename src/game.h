@@ -7,6 +7,7 @@ class Game {
 public:
     sol::state lua;
     float fps = 0;
+    bool letterbox = true;
     sf::RenderTarget* currentRenderer;
     std::unique_ptr<sf::RenderTexture> consoleRenderer;
     std::unique_ptr<sf::RenderWindow> window;
@@ -18,7 +19,8 @@ public:
         static Game game;
         return game;
     }
-    void gotoRoom(const RoomReference& room);
+    Room* gotoRoom(const RoomReference& room);
+    Room* getRoom();
     std::unordered_map<std::string, sol::object> kvp;
     void setKVP(const std::string& key, sol::main_object obj) {
         auto it = kvp.find(key);

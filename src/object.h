@@ -24,12 +24,19 @@ using ObjectId = int;
 class Object;
 class Object : public Drawable {
 public:
+    ObjectId id;
+    struct Reference {
+        ObjectId id;
+        sol::object object;
+    };
+    Reference MyReference;
+
     template <typename ... Args>
     bool runScript(const std::string& script, Args... args) {
         auto step = kvp.find(script);
         if (step != kvp.end()) {
             currentFunction = step->first;
-            auto res = step->second.as<sol::safe_function>()(this, args...);
+            auto res = step->second.as<sol::safe_function>()(MyReference, args...);
             if (!res.valid()) {
                 sol::error e = res;
                 std::cout << e.what() << "\n";
@@ -40,16 +47,11 @@ public:
         }
         return false;
     }
-
-    ObjectId id;
-
-    struct Reference {
-        ObjectId id;
-        sol::object object;
-    };
+    /*
     virtual Reference makeReference() {
         return Reference { id, sol::make_object(lua, this) };
     }
+    */
 
     sol::state& lua;
     std::unordered_map<std::string, sol::object> kvp;

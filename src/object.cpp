@@ -145,17 +145,32 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         "bbox_bottom",  sol::readonly_property(&Object::bboxBottom),
         "bbox_top",     sol::readonly_property(&Object::bboxTop),
         "bbox_top",     sol::readonly_property(&Object::bboxTop),
-        "get_id",       &Object::makeReference,
         "depth",        &Object::depth,
         "visible",      &Object::visible,
-        "extends",      &Object::extends,
         sol::meta_function::index,      &Object::getDyn,
         sol::meta_function::new_index,  &Object::setDyn
     );
 
     lua.new_usertype<Object::Reference>(
         "ObjectReference", sol::no_constructor,
-        "object", &Object::Reference::object
+        "extends", [](const Object::Reference& caller, Object* base) {
+            return caller.object.as<Object*>()->extends(base);
+        },
+        sol::meta_function::equal_to, [](const Object::Reference& a, const Object::Reference& b) {
+            return (a.object == b.object);
+        },
+        sol::meta_function::index, [](Object::Reference& self, const std::string& key, sol::this_state s) -> sol::object {
+            sol::state_view lua(s);
+            if (self.object) {
+                return self.object.as<sol::table>()[key];
+            }
+            else {
+                return sol::make_object(lua, sol::lua_nil);
+            }
+        },
+        sol::meta_function::new_index, [](Object::Reference& self, const std::string& key, sol::object value) {
+            self.object.as<sol::table>()[key] = value;
+        }
     );
 
     for (auto& it : std::filesystem::recursive_directory_iterator(assets / "scripts")) {

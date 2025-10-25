@@ -1,14 +1,20 @@
 #include "game.h"
 
-void Game::gotoRoom(const RoomReference& room) {
-    this->queuedRoom = std::make_unique<Room>(lua, room);
+Room* Game::gotoRoom(const RoomReference& room) {
+    queuedRoom = std::make_unique<Room>(lua, room);
+    return queuedRoom.get();
+}
+
+Room *Game::getRoom() {
+    return this->room.get();
 }
 
 void Game::initializeLua(sol::state &state, const std::filesystem::path& assets) {
     lua.new_usertype<Game>(
         "Game",         sol::no_constructor,
         "fps",          sol::readonly(&Game::fps),
-        "room_goto",    sol::readonly(&Game::gotoRoom),
+        "set_room",     sol::readonly(&Game::gotoRoom),
+        "room",         sol::readonly_property(&Game::getRoom),
         sol::meta_function::index,      &Game::getKVP,
         sol::meta_function::new_index,  &Game::setKVP
     );
@@ -26,6 +32,10 @@ void Game::initializeLua(sol::state &state, const std::filesystem::path& assets)
         sf::Vector2u displaySize = sf::VideoMode::getDesktopMode().size;
         sf::Vector2u windowSize = Game::get().window->getSize();
         self->window->setPosition(sf::Vector2i { static_cast<int>((displaySize.x / 2) - (windowSize.x / 2)), static_cast<int>((displaySize.y / 2) - (windowSize.y / 2)) });
+    };
+
+    lua["game"]["set_letterboxing"] = [](Game* self, bool letterbox) {
+        self->letterbox = letterbox;
     };
 
     auto gameRes = lua.safe_script_file(std::filesystem::path(assets / "scripts" / "game.lua").string());
