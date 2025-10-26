@@ -7,8 +7,31 @@
 
 using namespace nlohmann;
 
-void Object::draw(Room* room, float alpha) {
-	if (runScript("draw", room, alpha) || !spriteIndex) {
+const bool Object::extends(BaseObject *o) const {
+    if (o == nullptr) return false;
+    if (self == o) return true;
+    if (parent == nullptr) return false;
+
+    BaseObject* check = parent;
+    while (true) {
+        // found match
+        if (check == o) {
+            return true;
+        }
+
+        // continue upwards list search
+        if (check->parent != nullptr) {
+            check = check->parent;
+        }
+        else {
+            break;
+        }
+    }
+    return false;
+}
+
+void Object::draw(Room *room, float alpha) {
+    if (runScript("draw", room, alpha) || !spriteIndex) {
 		return;
 	}
 	float interpX = lerp(xPrev, x, alpha);
@@ -30,7 +53,7 @@ void Object::drawGui(Room *room, float alpha) {
 
 static sol::object ObjectCreate(
     const std::string& identifier,
-    const std::unique_ptr<Object>& extends,
+    const std::unique_ptr<BaseObject>& extends,
     sol::state& lua, const std::filesystem::path& assets,
     const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths)
 {
@@ -41,7 +64,7 @@ static sol::object ObjectCreate(
         return sol::object(sol::lua_nil);
     }
 
-    std::unique_ptr<Object> newObject = std::make_unique<Object>(lua);
+    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>(lua);
 
     if (extends != nullptr) {
         newObject->parent = extends.get();
@@ -52,13 +75,14 @@ static sol::object ObjectCreate(
 
     lua.create_named_table(identifier);
     lua[identifier] = std::move(newObject);
-    std::unique_ptr<Object>& memPtr = lua[identifier].get<std::unique_ptr<Object>&>();
+    std::unique_ptr<BaseObject>& memPtr = lua[identifier].get<std::unique_ptr<BaseObject>&>();
 
     baseClasses[identifier] = ObjectManager::ScriptedInfo {
         lua[identifier],
-        [](Object* original) { return std::make_unique<Object>(*original); }
+        [](BaseObject* original) {
+            return std::make_unique<Object>(*original);
+        }
     };
-
 
     sol::object solObject = lua[identifier];
     memPtr->self = memPtr.get();
@@ -105,7 +129,7 @@ static sol::object ObjectCreateRecursive(
         if (it == objMgr.baseClasses.end()) {
             ObjectCreateRecursive(parentIdentifier, lua, assets, objectScriptPaths);
         }
-        std::unique_ptr<Object>& parentObj = objMgr.baseClasses.at(parentIdentifier).object.as<std::unique_ptr<Object>&>();
+        std::unique_ptr<BaseObject>& parentObj = objMgr.baseClasses.at(parentIdentifier).object.as<std::unique_ptr<BaseObject>&>();
         objSol = ObjectCreate(identifier, parentObj, lua, assets, objectScriptPaths);
     }
     else {
@@ -151,9 +175,16 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         sol::meta_function::new_index,  &Object::setDyn
     );
 
+    lua.new_usertype<BaseObject>(
+        "BaseObject",       sol::no_constructor,
+        sol::meta_function::index,      &BaseObject::getDyn,
+        sol::meta_function::new_index,  &BaseObject::setDyn,
+        sol::base_classes, sol::bases<Object>()
+    );
+
     lua.new_usertype<Object::Reference>(
         "ObjectReference", sol::no_constructor,
-        "extends", [](const Object::Reference& caller, Object* base) {
+        "extends", [](const Object::Reference& caller, BaseObject* base) {
             return caller.object.as<Object*>()->extends(base);
         },
         sol::meta_function::equal_to, [](const Object::Reference& a, const Object::Reference& b) {
@@ -183,10 +214,12 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
     }
 
     lua["object_create"] = [&](const std::string& identifier, sol::object extends) {
-        if (extends.is<std::unique_ptr<Object>>()) {
-            return ObjectCreate(identifier, extends.as<std::unique_ptr<Object>&>(), lua, assets, scriptPaths);
+        if (extends.is<std::unique_ptr<BaseObject>>()) {
+            return ObjectCreate(identifier, extends.as<std::unique_ptr<BaseObject>&>(), lua, assets, scriptPaths);
         }
-        return ObjectCreate(identifier, nullptr, lua, assets, scriptPaths);
+        else {
+            return ObjectCreate(identifier, nullptr, lua, assets, scriptPaths);
+        }
     };
 
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "objects")) {

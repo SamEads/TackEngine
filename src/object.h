@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <SFML/Graphics.hpp>
 #include <sol/sol.hpp>
+#include <deque>
 #include "sprite.h"
 #include "mathhelper.h"
 
@@ -22,6 +23,7 @@ public:
 
 using ObjectId = int;
 class Object;
+class BaseObject;
 class Object : public Drawable {
 public:
     ObjectId id;
@@ -70,8 +72,8 @@ public:
     SpriteIndex* spriteIndex = nullptr;
     SpriteIndex* maskIndex = nullptr;
 
-    Object* parent = nullptr;
-    Object* self = nullptr;
+    BaseObject* parent = nullptr;
+    BaseObject* self = nullptr;
     std::string identifier;
 
     Object(sol::state& lua) : lua(lua) {
@@ -211,50 +213,7 @@ public:
 
     void trySet(sol::object v) {}
 
-    void eventInherited(sol::variadic_args va) {
-        Object* p = parent;
-        auto step = p->kvp.find(currentFunction);
-        while (step == p->kvp.end()) {
-            p = parent->parent;
-            if (!p) {
-                return;
-            }
-            step = p->kvp.find(currentFunction);
-        }
-        auto res = step->second.as<sol::safe_function>()(this, va);
-        if (!res.valid()) {
-            sol::error e = res;
-            std::cout << e.what() << "\n";
-        }
-    }
-
-    const bool extends(Object* o) const {
-        if (o == nullptr) {
-            return false;
-        }
-        if (this->self == o) {
-            return true;
-        }
-        if (parent == nullptr) {
-            return false;
-        }
-        Object* check = parent;
-        while (true) {
-            // found match
-            if (check == o) {
-                return true;
-            }
-
-            // continue upwards list search
-            if (check->parent != nullptr) {
-                check = check->parent;
-            }
-            else {
-                break;
-            }
-        }
-        return false;
-    }
+    const bool extends(BaseObject* o) const;
 
     void draw(Room* room, float alpha) override;
     void beginDraw(Room* room, float alpha) override;
@@ -262,7 +221,12 @@ public:
     void drawGui(Room* room, float alpha) override;
 };
 
-#include <deque>
+class BaseObject : public Object {
+public:
+    int fnasdngasdkg = 0;
+    BaseObject(sol::state& lua) : Object(lua) {}
+};
+
 class ObjectManager {
 private:
     std::unordered_map<std::string, std::filesystem::path> scriptPaths;
@@ -270,7 +234,7 @@ public:
     class ScriptedInfo {
     public:
         sol::object object;
-        std::function<std::unique_ptr<Object>(Object*)> create;
+        std::function<std::unique_ptr<Object>(BaseObject*)> create;
     };
     std::unordered_map<std::string, ScriptedInfo> baseClasses;
 
@@ -279,22 +243,21 @@ public:
         return om;
     }
 
-    std::unique_ptr<Object> make(sol::state& lua, Object* object) {
-        if (object != NULL) {
-
+    std::unique_ptr<Object> make(sol::state& lua, BaseObject* baseObject) {
+        if (baseObject != NULL) {
             auto& list = baseClasses;
 
-            auto it = std::find_if(list.begin(), list.end(), [&object](const std::pair<std::string, ScriptedInfo>& p) {
+            auto it = std::find_if(list.begin(), list.end(), [&baseObject](const std::pair<std::string, ScriptedInfo>& p) {
                 sol::object obj = p.second.object;
-                auto uniquePtr = obj.as<Object*>();
-                return uniquePtr == object;
+                auto uniquePtr = obj.as<BaseObject*>();
+                return uniquePtr == baseObject;
             });
 
             if (it != list.end()) {
-                auto copied = it->second.create(object);
+                auto copied = it->second.create(baseObject);
 
-                std::deque<Object*> parents;
-                Object* f = object->parent;
+                std::deque<BaseObject*> parents;
+                BaseObject* f = baseObject->parent;
                 if (f) {
                     while (true) {
                         if (f) {
@@ -311,7 +274,7 @@ public:
                         }
                     }
                 }
-                for (auto& v : object->kvp) {
+                for (auto& v : baseObject->kvp) {
                     copied->setDyn(v.first, v.second);
                 }
                 return copied;

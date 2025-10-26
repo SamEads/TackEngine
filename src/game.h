@@ -2,9 +2,11 @@
 
 #include <SFML/Graphics.hpp>
 #include "room.h"
+#include "profiler.h"
 
 class Game {
 public:
+    Profiler profiler;
     sol::state lua;
     float fps = 0;
     bool letterbox = true;

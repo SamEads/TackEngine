@@ -109,6 +109,7 @@ int main() {
             if (game.room) {
                 game.room->update();
             }
+            // std::cout << "step: " << game.profiler.getMS("beginstep") << "\t" << game.profiler.getMS("step") << "\t" << game.profiler.getMS("endstep") << "ms\n";
         }
 
         Game::get().currentRenderer = Game::get().consoleRenderer.get();

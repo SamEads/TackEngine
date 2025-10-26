@@ -86,7 +86,7 @@ public:
         queuedDelete.clear();
     }
 
-    void objectDestroy(std::unique_ptr<Object>& base) {
+    void objectDestroy(std::unique_ptr<BaseObject>& base) {
         for (auto& i : instances) {
             if (i->extends(base.get())) {
                 ObjectId id = i->id;
@@ -120,7 +120,7 @@ public:
         ids.erase(object->id);
     }
 
-    int objectCount(Object* baseType) {
+    int objectCount(BaseObject* baseType) {
         if (baseType == NULL) {
             return false;
         }
@@ -131,7 +131,7 @@ public:
         return c;
     }
 
-    bool objectExists(Object* baseType) {
+    bool objectExists(BaseObject* baseType) {
         if (baseType == NULL) {
             return false;
         }
@@ -164,9 +164,9 @@ public:
         return sol::make_object(lua, sol::lua_nil);
     }
 
-    std::vector<Object::Reference> objectGetList(Object* baseType);
+    std::vector<Object::Reference> objectGetList(BaseObject* baseType);
 
-    sol::object getObject(Object* baseType) {
+    sol::object getObject(BaseObject* baseType) {
         if (baseType == NULL) {
             return sol::make_object(lua, sol::lua_nil);
         }
@@ -197,7 +197,7 @@ public:
         return ids.find(refId) != ids.end();
     }
 
-    std::vector<Object::Reference> collisionRectangleList(const Object::Reference& caller, float x1, float y1, float x2, float y2, std::unique_ptr<Object>& type) {
+    std::vector<Object::Reference> collisionRectangleList(const Object::Reference& caller, float x1, float y1, float x2, float y2, std::unique_ptr<BaseObject>& type) {
         if (type == nullptr) {
             return {};
         }
@@ -254,7 +254,7 @@ public:
         }
         else {
             // Object
-            auto& baseType = type.as<std::unique_ptr<Object>&>();
+            auto& base = type.as<std::unique_ptr<BaseObject>&>();
             const Object* ignore = nullptr;
             if (va.size() > 0) {
                 if (va[0].get<bool>() == true) {
@@ -263,7 +263,7 @@ public:
             }
             for (auto& i : ids) {
                 auto& instance = i.second;
-                if (i.second->extends(baseType.get())) {
+                if (i.second->extends(base.get())) {
                     if (ignore == nullptr || i.second != ignore) {
                         sf::FloatRect otherRect = { { instance->bboxLeft(), instance->bboxTop() }, { 0, 0 } };
                         otherRect.size.x = instance->bboxRight() - otherRect.position.x;
@@ -350,7 +350,7 @@ public:
             }
         }
 
-        auto& baseType = type.as<std::unique_ptr<Object>&>();
+        auto& baseType = type.as<std::unique_ptr<BaseObject>&>();
         for (auto& i : ids) {
             if (i.second->extends(baseType.get())) {
                 auto answer = polygonsIntersect(callerPts, i.second->getPoints());
@@ -363,7 +363,7 @@ public:
         return Object::Reference { -1, sol::make_object(lua, sol::lua_nil) };
     }
 
-    Object::Reference instanceCreateScript(float x, float y, float depth, Object* baseObject) {
+    Object::Reference instanceCreateScript(float x, float y, float depth, BaseObject* baseObject) {
         Object* ptr = instanceCreate(x, y, depth, baseObject);
 
         auto it = ptr->kvp.find("create");
@@ -380,7 +380,7 @@ public:
         return ptr->MyReference;
     }
 
-    Object* instanceCreate(float x, float y, float depth, Object* baseObject) {
+    Object* instanceCreate(float x, float y, float depth, BaseObject* baseObject) {
         std::unique_ptr<Object> copiedObject = ObjectManager::get().make(lua, baseObject);
         copiedObject->self = baseObject;
         copiedObject->id = currentId++;

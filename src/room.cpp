@@ -95,12 +95,28 @@ Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
                 std::string objectIndex = i["object_index"];
                 float x = i["x"];
                 float y = i["y"];
-                auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<Object*>());
+                auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<BaseObject*>());
                 obj->xScale = i.value("scale_x", 1);
                 obj->yScale = i.value("scale_y", 1);
                 obj->imageAngle = i.value("rotation", 0);
                 obj->imageIndex = i["image_index"];
                 obj->imageSpeedMod = i["image_speed"];
+                for (auto& prop : i["properties"]) {
+                    for (auto& [k, v] : prop.items()) {
+                        if (lua[v.get<std::string>()] != sol::lua_nil) {
+                            obj->setDyn(k, lua[v.get<std::string>()]);
+                        }
+                        else if (v.is_number()) {
+                            obj->setDyn(k, sol::make_object(lua, v.get<float>()));
+                        }
+                        else if (v.is_boolean()) {
+                            obj->setDyn(k, sol::make_object(lua, v.get<bool>()));
+                        }
+                        else if (v.is_string()) {
+                            obj->setDyn(k, sol::make_object(lua, v.get<std::string>()));
+                        }
+                    }
+                }
 
                 obj->xPrev = obj->x;
                 obj->yPrev = obj->y;
@@ -188,18 +204,32 @@ void Room::update() {
         }
     }
 
+    Game::get().profiler.start("beginstep");
     for (auto& instance : instances) {
         instance->runScript("begin_step", this);
     }
     addQueue();
+    Game::get().profiler.finish("beginstep");
+
+    Game::get().profiler.start("step");
     for (auto& instance : instances) {
+        Game::get().profiler.start(std::to_string(instance->id));
         instance->runScript("step", this);
+        Game::get().profiler.finish(std::to_string(instance->id));
+        double t = Game::get().profiler.getMS(std::to_string(instance->id));
+        if (t > 0.1) {
+            std::cout << instance->identifier << ": " << t << "\n";
+        }
     }
     addQueue();
+    Game::get().profiler.finish("step");
+
+    Game::get().profiler.start("endstep");
     for (auto& instance : instances) {
         instance->runScript("end_step", this);
     }
     addQueue();
+    Game::get().profiler.finish("endstep");
 }
 
 void Room::draw(float alpha) {
@@ -292,7 +322,7 @@ void Room::setCameraY(float val) {
     }
 }
 
-std::vector<Object::Reference> Room::objectGetList(Object* baseType) {
+std::vector<Object::Reference> Room::objectGetList(BaseObject* baseType) {
     std::vector<Object::Reference> v;
     for (auto& i : instances) {
         if (i->extends(baseType)) {

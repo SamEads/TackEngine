@@ -225,7 +225,7 @@ public:
 			auto lastWrite = std::filesystem::last_write_time(path / std::string("sound" + extension));
 			auto thisLW = std::filesystem::last_write_time(directory / std::string(name + extension));
 			if (thisLW > lastWrite) {
-				writeData = true;
+				writeSound = true;
 			}
 
 			std::filesystem::path dataFile = path / "data.json";
@@ -248,6 +248,8 @@ public:
 		}
 
 		if (writeSound) {
+			AddMessage("Writing sound " + name);
+			std::filesystem::remove(path / std::string("sound" + extension));
 			std::filesystem::copy_file(directory / std::string(name + extension), path / std::string("sound" + extension));
 		}
 	}

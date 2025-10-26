@@ -79,6 +79,14 @@ public:
 	};
 	class Sounds {
 	public:
+		const ScriptSound* data;
+		bool deferLoad = false;
+		bool playOnLoad = false;
+		struct ToPlay {
+			float pitch, volume;
+			bool loop;
+		} toPlay;
+		
 		sf::SoundBuffer buffer;
 		std::vector<SoundData> sounds;
 	};

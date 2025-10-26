@@ -25,6 +25,23 @@ void SoundManager::update() {
 				}
 			}
 			for (auto& [k, v] : sounds) {
+				if (v.deferLoad) {
+					v.deferLoad = false;
+					bool loadedSound = v.buffer.loadFromFile(v.data->file);
+					if (v.playOnLoad) {
+						v.playOnLoad = false;
+						const std::string str = v.data->file.string();
+						auto& p = v.toPlay;
+						auto& buf = v.buffer;
+						sounds[str].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf) });
+						sounds[str].sounds.back().timer.restart();
+
+						sounds[str].sounds.back().sound->play();
+						sounds[str].sounds.back().sound->setPitch(p.pitch);
+						sounds[str].sounds.back().sound->setVolume(p.volume * 100.0f);
+						sounds[str].sounds.back().sound->setLooping(p.loop);
+					}
+				}
 				auto& vec = v.sounds;
 				for (auto it = vec.begin(); it != vec.end();) {
 					std::unique_ptr<sf::Sound>& s = it->sound;
@@ -156,16 +173,24 @@ void SoundManager::play(const ScriptSound& sound, float pitch, float volume, boo
 
 	const std::string soundStr = sound.file.string();
 	if (sounds.find(soundStr) == sounds.end()) {
-		bool loadedSound = sounds[soundStr].buffer.loadFromFile(sound.file);
+		sounds[soundStr].deferLoad = true;
+		sounds[soundStr].data = &sound;
+		// bool loadedSound = sounds[soundStr].buffer.loadFromFile(sound.file);
 	}
 
-	auto& buf = sounds[soundStr].buffer;
-	sounds[soundStr].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf) });
-	sounds[soundStr].sounds.back().timer.restart();
-	sounds[soundStr].sounds.back().sound->play();
-	sounds[soundStr].sounds.back().sound->setPitch(pitch);
-	sounds[soundStr].sounds.back().sound->setVolume(volume * 100.0f);
-	sounds[soundStr].sounds.back().sound->setLooping(loop);
+	if (sounds[soundStr].deferLoad) {
+		sounds[soundStr].playOnLoad = true;
+		sounds[soundStr].toPlay = Sounds::ToPlay { pitch, volume, loop };
+	}
+	else {
+		auto& buf = sounds[soundStr].buffer;
+		sounds[soundStr].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf) });
+		sounds[soundStr].sounds.back().timer.restart();
+		sounds[soundStr].sounds.back().sound->play();
+		sounds[soundStr].sounds.back().sound->setPitch(pitch);
+		sounds[soundStr].sounds.back().sound->setVolume(volume * 100.0f);
+		sounds[soundStr].sounds.back().sound->setLooping(loop);
+	}
 }
 
 void SoundManager::stop(const ScriptSound& sound) {
