@@ -1,7 +1,8 @@
 #include "game.h"
 
-Room* Game::gotoRoom(const RoomReference& room) {
+Room* Game::queueRoom(const RoomReference& room) {
     queuedRoom = std::make_unique<Room>(lua, room);
+    queuedRoom->load();
     return queuedRoom.get();
 }
 
@@ -13,7 +14,7 @@ void Game::initializeLua(sol::state &state, const std::filesystem::path& assets)
     lua.new_usertype<Game>(
         "Game",         sol::no_constructor,
         "fps",          sol::readonly(&Game::fps),
-        "set_room",     sol::readonly(&Game::gotoRoom),
+        "queue_room",     sol::readonly(&Game::queueRoom),
         "room",         sol::readonly_property(&Game::getRoom),
         sol::meta_function::index,      &Game::getKVP,
         sol::meta_function::new_index,  &Game::setKVP

@@ -7,65 +7,40 @@
 #include <mutex>
 #include <sol/sol.hpp>
 
-class ScriptSound {
+class SoundAsset {
 public:
-	std::filesystem::path file;
-	float volume = 1.0f;
+	std::string name;
+	std::filesystem::path path;
+	float volume;
 };
 
-class SoundData {
+class SoundBuffer;
+class SoundInstance {
 public:
-	sf::Clock timer;
+	SoundBuffer* buffer;
 	std::unique_ptr<sf::Sound> sound;
-	uint64_t index;
 };
 
-class Sounds {
+class SoundInstanceReference {
 public:
-	const ScriptSound* data;
-	bool deferLoad = false;
-	bool playOnLoad = false;
-	struct ToPlay {
-		float pitch, volume;
-		bool loop;
-	} toPlay;
-	uint64_t soundIndex;
-	
+	uint64_t id;
+	SoundBuffer* buffer;
+};
+
+class SoundBuffer {
+public:
 	sf::SoundBuffer buffer;
-	std::vector<SoundData> sounds;
-	std::unordered_map<uint64_t, SoundData*> soundIndexes;
-};
-
-class SoundReference {
-public:
-	bool valid = false;
-	Sounds* sounds;
-	uint64_t index;
+	SoundAsset* asset;
+	std::unordered_map<uint64_t, std::unique_ptr<SoundInstance>> instances;
+	uint64_t nextInstanceId;
 };
 
 class SoundManager {
 public:
-	std::unordered_map<std::string, Sounds> sounds;
-	std::thread thread;
+	std::thread loadThread;
 	std::mutex mutex;
-	bool running = true;
-
-	class FadeOutSound {
-	public:
-		std::unique_ptr<sf::Sound> sound;
-		float startValue;
-		float seconds;
-		sf::Clock timer;
-	};
-	std::vector<FadeOutSound> fadeOutSounds;
-	SoundReference play(const ScriptSound& sound, float pitch = 1.0f, float volume = 1.0f, bool loop = false);
-	void stop(sol::object object);
-	void fadeOut(const ScriptSound& sound, float seconds);
-	void update();
-	void shutdown();
-	bool isPlaying(const ScriptSound& sound);
+	std::unordered_map<std::string, SoundBuffer> buffers;
 	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
-
     static SoundManager& get() {
         static SoundManager sndMgr;
         return sndMgr;
@@ -74,57 +49,12 @@ public:
 
 class MusicManager {
 public:
-	bool hasMusic = false;
-	sf::Music m;
-	ScriptSound* currentSound;
-	float currentVolume = 1.0f;
-	void play(ScriptSound& sound) {
-		bool result = m.openFromFile(sound.file);
-		m.setLooping(true);
-		m.play();
-		m.setVolume(sound.volume * 100.0f);
-		currentSound = &sound;
-		currentVolume = 1.0f;
-		hasMusic = true;
-	}
-	void stop() {
-		if (!hasMusic) return;
-		m.stop();
-	}
-	void pause() {
-		if (!hasMusic) return;
-		m.pause();
-	}
-	void setPitch(float pitch) {
-		m.setPitch(pitch);
-	}
-	void resume() {
-		if (!hasMusic) return;
-		m.play();
-	}
-	void setVolume(float volume) {
-		if (!hasMusic) return;
-		currentVolume = volume;
-		m.setVolume((currentSound->volume * currentVolume) * 100.0f);
-	}
-	void setLoopPoints(float start, float end) {
-		if (!hasMusic) return;
-		sf::Music::TimeSpan timespan;
-		timespan.offset = sf::seconds(start);
-		timespan.length = sf::seconds(end) - timespan.offset;
-		m.setLoopPoints(timespan);
-	}
-	float getPosition() {
-		if (!hasMusic) return 0;
-		return m.getPlayingOffset().asSeconds();
-	}
-	void setPosition(float position) {
-		if (!hasMusic) return;
-		m.setPlayingOffset(sf::seconds(position));
-	}
+	float volume;
+	sf::Music music;
+	SoundAsset* asset;
+	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 	static MusicManager& get() {
         static MusicManager musMgr;
         return musMgr;
     }
-	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 };

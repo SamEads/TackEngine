@@ -73,9 +73,13 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
 }
 
 Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
-    auto& game = Game::get();
-    std::filesystem::path jsonPath = room.p / "data.json";
+    roomReference = &room;
+}
 
+void Room::load() {
+    auto& game = Game::get();
+
+    auto jsonPath = roomReference->p / "data.json";
     std::ifstream i(jsonPath);
     json j = json::parse(i);
 
@@ -167,7 +171,7 @@ Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
     }
 
     lua["room"] = this;
-    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(room.name + ".lua");
+    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(roomReference->name + ".lua");
     if (std::filesystem::exists(roomScript)) {
         auto result = lua.safe_script_file(roomScript.string());
         if (!result.valid()) {
@@ -237,7 +241,7 @@ void Room::draw(float alpha) {
     float ch = cameraHeight;
     float cx = lerp(cameraPrevX, cameraX, alpha);
     float cy = lerp(cameraPrevY, cameraY, alpha);
-    view.setSize({ cameraWidth * 2, cameraHeight * 2 });
+    view.setSize({ cameraWidth, cameraHeight });
     view.setCenter({ cx + cw / 2.0f, cy + ch / 2.0f });
     target->setView(view);
     

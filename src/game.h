@@ -12,6 +12,7 @@ public:
     sf::RenderTarget* currentRenderer;
     std::unique_ptr<sf::RenderTexture> consoleRenderer;
     std::unique_ptr<sf::RenderWindow> window;
+    uint64_t roomId;
     std::unique_ptr<Room> room;
     std::unique_ptr<Room> queuedRoom;
     std::filesystem::path assetsFolder = "assets";
@@ -22,7 +23,7 @@ public:
         static Game game;
         return game;
     }
-    Room* gotoRoom(const RoomReference& room);
+    Room* queueRoom(const RoomReference& room);
     Room* getRoom();
     void initializeLua(sol::state& state, const std::filesystem::path& assets);
     void setKVP(const std::string& key, sol::main_object obj) {

@@ -107,7 +107,7 @@ void Object::draw(Room *room, float alpha) {
 	}
 	float interpX = lerp(xPrev, x, alpha);
 	float interpY = lerp(yPrev, y, alpha);
-	spriteIndex->draw(*Game::get().currentRenderer, { floorf(interpX), floorf(interpY) }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
+	spriteIndex->draw(*Game::get().currentRenderer, { interpX, interpY }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
 }
 
 void Object::beginDraw(Room *room, float alpha) {
@@ -179,9 +179,8 @@ static sol::object ObjectCreateRecursive(
     std::string identifier,
     sol::state& lua,
     const std::filesystem::path& assets,
-    const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths)
-{
-    // potentially a parent class-ignore
+    const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths) {
+    // potentially a parent class- ignore
     ObjectManager& objMgr = ObjectManager::get();
     if (objMgr.baseClasses.find(identifier) != objMgr.baseClasses.end()) {
         return sol::object(sol::lua_nil);
@@ -233,7 +232,7 @@ static sol::object ObjectCreateRecursive(
             obj->rawProperties[prop["name"]] = { static_cast<ConvertType>(prop.value("type", static_cast<int>(deduceType(prop["value"])))), prop["value"] };
         }
     }
-    std::unique_ptr<Object>& obj = objSol.as<std::unique_ptr<Object>&>();
+    std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
 
     obj->visible = j["visible"];
 
@@ -391,4 +390,5 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         std::string identifier = it.path().filename().replace_extension("").string(); // okay then
         ObjectCreateRecursive(identifier, lua, assets, scriptPaths);
     }
+
 }

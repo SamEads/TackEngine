@@ -76,11 +76,11 @@ int main() {
     };
 
     SoundManager& sndMgr = SoundManager::get();
-    sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
+    // sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
     auto& window = Game::get().window;
 
-    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256 * 2, 224 * 2 });
+    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256 * 8, 224 * 8 });
 
     lua["game"]["init"](lua["game"]);
 

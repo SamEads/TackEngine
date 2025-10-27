@@ -24,6 +24,8 @@ public:
 };
 
 class Room {
+private:
+    const RoomReference* roomReference;
 public:
     static void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 
@@ -42,6 +44,8 @@ public:
     float cameraWidth = 0, cameraHeight = 0;
 
     Room(sol::state& lua, const RoomReference& room);
+
+    void load();
 
     void update();
 
