@@ -404,16 +404,27 @@ public:
 			object["name"] = p["name"];
 			if (p.contains("resource")) {
 				if (p["resource"].contains("path")) {
-					object["type"] = "resource";
-					object["resource"] = p["resource"]["name"];
+					object["value"] = p["resource"]["name"];
 					std::string dir = p["resource"]["path"].get<std::string>();
 					dir.erase(dir.find_first_of("/"));
 					object["directory"] = dir;
 				}
 			}
 			else if (p.find("value") != p.end()) {
-				object["type"] = "value";
-				object["value"] = p["value"];
+				int t = p["varType"];
+				object["type"] = t;
+				if (t == 0) {
+					object["value"] = std::stof(p["value"].get<std::string>());
+				}
+				else if (t == 1) {
+					object["value"] = std::stoi(p["value"].get<std::string>());
+				}
+				else if (t == 3) {
+					object["value"] = (p["value"] == "true" || p["value"] == "True") ? true : false;
+				}
+				else {
+					object["value"] = p["value"].get<std::string>();
+				}
 			}
 			properties.push_back(object);
 		}
@@ -682,7 +693,9 @@ public:
 			instance->properties = json::array();
 			for (auto& p : jInst["properties"]) {
 				json object = json::object();
+
 				object = { { p["propertyId"]["name"], p["value"] } };
+				
 				instance->properties.push_back(object);
 			}
 			instances.push_back(std::move(instance));
@@ -699,8 +712,6 @@ public:
 		for (auto& i : instances) {
 			json o = json::object();
 			o["object_index"] = i->object;
-			//o["gm_uuid"] = i->uuid;
-			//o["creation_code"] = i->hasCreationCode;
 			if (i->rotation != 0) {
 				o["rotation"] = i->rotation;
 			}

@@ -13,6 +13,65 @@ public:
 	float volume = 1.0f;
 };
 
+class SoundData {
+public:
+	sf::Clock timer;
+	std::unique_ptr<sf::Sound> sound;
+	uint64_t index;
+};
+
+class Sounds {
+public:
+	const ScriptSound* data;
+	bool deferLoad = false;
+	bool playOnLoad = false;
+	struct ToPlay {
+		float pitch, volume;
+		bool loop;
+	} toPlay;
+	uint64_t soundIndex;
+	
+	sf::SoundBuffer buffer;
+	std::vector<SoundData> sounds;
+	std::unordered_map<uint64_t, SoundData*> soundIndexes;
+};
+
+class SoundReference {
+public:
+	bool valid = false;
+	Sounds* sounds;
+	uint64_t index;
+};
+
+class SoundManager {
+public:
+	std::unordered_map<std::string, Sounds> sounds;
+	std::thread thread;
+	std::mutex mutex;
+	bool running = true;
+
+	class FadeOutSound {
+	public:
+		std::unique_ptr<sf::Sound> sound;
+		float startValue;
+		float seconds;
+		sf::Clock timer;
+	};
+	std::vector<FadeOutSound> fadeOutSounds;
+	SoundReference play(const ScriptSound& sound, float pitch = 1.0f, float volume = 1.0f, bool loop = false);
+	void stop(sol::object object);
+	void fadeOut(const ScriptSound& sound, float seconds);
+	void update();
+	void shutdown();
+	bool isPlaying(const ScriptSound& sound);
+	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+
+    static SoundManager& get() {
+        static SoundManager sndMgr;
+        return sndMgr;
+    }
+};
+
 class MusicManager {
 public:
 	bool hasMusic = false;
@@ -68,51 +127,4 @@ public:
         return musMgr;
     }
 	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
-};
-
-class SoundManager {
-public:
-	class SoundData {
-	public:
-		sf::Clock timer;
-		std::unique_ptr<sf::Sound> sound;
-	};
-	class Sounds {
-	public:
-		const ScriptSound* data;
-		bool deferLoad = false;
-		bool playOnLoad = false;
-		struct ToPlay {
-			float pitch, volume;
-			bool loop;
-		} toPlay;
-		
-		sf::SoundBuffer buffer;
-		std::vector<SoundData> sounds;
-	};
-	std::unordered_map<std::string, Sounds> sounds;
-	std::thread thread;
-	std::mutex mutex;
-	bool running = true;
-
-	class FadeOutSound {
-	public:
-		std::unique_ptr<sf::Sound> sound;
-		float startValue;
-		float seconds;
-		sf::Clock timer;
-	};
-	std::vector<FadeOutSound> fadeOutSounds;
-	void play(const ScriptSound& sound, float pitch = 1.0f, float volume = 1.0f, bool loop = false);
-	void stop(const ScriptSound& sound);
-	void fadeOut(const ScriptSound& sound, float seconds);
-	void update();
-	void shutdown();
-	bool isPlaying(const ScriptSound& sound);
-	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
-
-    static SoundManager& get() {
-        static SoundManager sndMgr;
-        return sndMgr;
-    }
 };

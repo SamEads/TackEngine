@@ -2,7 +2,7 @@
 #include "sprite.h"
 #include "vendor/json.hpp"
 #include "game.h"
-#include "mathhelper.h"
+#include "util/mathhelper.h"
 
 using namespace nlohmann;
 
@@ -252,7 +252,6 @@ sf::Texture CreatePaddedTexture(
     }
 
     sf::Texture tex;
-    // padded.saveToFile(std::filesystem::path("dump") / std::string(std::to_string(rand() % 1000) + ".png"));
     bool loaded = tex.loadFromImage(padded);
     return tex;
 }

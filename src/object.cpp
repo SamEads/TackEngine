@@ -7,7 +7,78 @@
 
 using namespace nlohmann;
 
-const bool Object::extends(BaseObject *o) const {
+std::vector<sf::Vector2f> Object::getPoints() const {
+    auto it = kvp.find("points");
+    if (it != kvp.end()) {
+        sol::table points = it->second.as<sol::table>();
+
+        std::vector<sf::Vector2f> v;
+        v.reserve(points.size());
+
+        for (auto& point : points) {
+            auto t = point.second.as<sol::table>();
+            float px = t.get<float>("x");
+            float py = t.get<float>("y");
+            v.push_back({ px + x, py + y });
+        }
+        return v;
+    }
+
+    if (imageAngle == 0) {
+        sf::FloatRect rect = getRectangle();
+        return std::vector<sf::Vector2f> {
+            { rect.position.x, rect.position.y },
+            { rect.position.x + rect.size.x, rect.position.y },
+            { rect.position.x + rect.size.x, rect.position.y + rect.size.y },
+            { rect.position.x, rect.position.y + rect.size.y }
+        };
+    }
+
+    sf::FloatRect hb = {};
+    if (maskIndex) {
+        hb = maskIndex->hitbox;
+    }
+    else if (spriteIndex) {
+        hb = spriteIndex->hitbox;
+    }
+    sf::Vector2f unscaledCorners[4] = {
+        { hb.position.x, hb.position.y }, // top-left
+        { hb.position.x + hb.size.x, hb.position.y }, // top-right
+        { hb.position.x + hb.size.x, hb.position.y + hb.size.y }, // bottom-right
+        { hb.position.x, hb.position.y + hb.size.y } // bottom-left
+    };
+
+    std::vector<sf::Vector2f> transformed;
+    transformed.reserve(4);
+
+    float rad = Deg2Rad(imageAngle);
+    float cosA = std::cos(rad);
+    float sinA = std::sin(rad);
+
+    for (auto& corner : unscaledCorners) {
+        sf::Vector2f scaled = { corner.x * xScale, corner.y * yScale };
+
+        float originX = (spriteIndex) ? spriteIndex->originX : 0;
+        float originY = (spriteIndex) ? spriteIndex->originY : 0;
+        scaled.x -= originX * xScale;
+        scaled.y -= originY * yScale;
+
+        sf::Vector2f rotated = {
+            scaled.x * cosA - scaled.y * sinA,
+            scaled.x * sinA + scaled.y * cosA
+        };
+
+        rotated.x += x;
+        rotated.y += y;
+
+        transformed.push_back(rotated);
+    }
+
+    return transformed;
+}
+
+const bool Object::extends(BaseObject *o) const
+{
     if (o == nullptr) return false;
     if (self == o) return true;
     if (parent == nullptr) return false;
@@ -68,6 +139,9 @@ static sol::object ObjectCreate(
 
     if (extends != nullptr) {
         newObject->parent = extends.get();
+        for (auto& prop : extends->rawProperties) {
+            newObject->rawProperties[prop.first] = { prop.second.first, prop.second.second };
+        }
         for (std::pair p : extends->kvp) {
             newObject->kvp.insert(p);
         }
@@ -123,6 +197,22 @@ static sol::object ObjectCreateRecursive(
 
     sol::object objSol = sol::lua_nil;
 
+    auto deduceType = [](const json& v) {
+        if (v.is_number_integer()) {
+            return ConvertType::INTEGER;
+        }
+        else if (v.is_number()) {
+            return ConvertType::REAL;
+        }
+        else if (v.is_boolean()) {
+            return ConvertType::BOOLEAN;
+        }
+        else if (v.is_string()) {
+            return ConvertType::STRING;
+        }
+        return ConvertType::STRING;
+    };
+
     if (!j["parent"].is_null()) {
         std::string parentIdentifier = j["parent"];
         auto it = objMgr.baseClasses.find(parentIdentifier);
@@ -131,9 +221,17 @@ static sol::object ObjectCreateRecursive(
         }
         std::unique_ptr<BaseObject>& parentObj = objMgr.baseClasses.at(parentIdentifier).object.as<std::unique_ptr<BaseObject>&>();
         objSol = ObjectCreate(identifier, parentObj, lua, assets, objectScriptPaths);
+        std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
+        for (auto& prop : j["properties"]) {
+            obj->rawProperties[prop["name"]] = { static_cast<ConvertType>(prop.value("type", static_cast<int>(deduceType(prop["value"])))), prop["value"] };
+        }
     }
     else {
         objSol = ObjectCreate(identifier, nullptr, lua, assets, objectScriptPaths);
+        std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
+        for (auto& prop : j["properties"]) {
+            obj->rawProperties[prop["name"]] = { static_cast<ConvertType>(prop.value("type", static_cast<int>(deduceType(prop["value"])))), prop["value"] };
+        }
     }
     std::unique_ptr<Object>& obj = objSol.as<std::unique_ptr<Object>&>();
 
@@ -144,6 +242,69 @@ static sol::object ObjectCreateRecursive(
     }
 
     return objSol;
+}
+
+std::unique_ptr<Object> ObjectManager::make(sol::state &lua, BaseObject *baseObject) {
+    if (baseObject != NULL) {
+        auto& list = baseClasses;
+
+        auto it = std::find_if(list.begin(), list.end(), [&baseObject](const std::pair<std::string, ScriptedInfo>& p) {
+            return p.second.object.as<BaseObject*>() == baseObject;
+        });
+
+        if (it != list.end()) {
+            auto copied = it->second.create(baseObject);
+
+            std::deque<BaseObject*> parents;
+            BaseObject* f = baseObject->parent;
+            if (f) {
+                while (true) {
+                    if (f) {
+                        parents.push_back(f);
+                        f = f->parent;
+                    }
+                    else break;
+                }
+                while (!parents.empty()) {
+                    BaseObject* p = parents.front();
+                    parents.pop_front();
+                    for (auto& v : p->kvp) {
+                        copied->setDyn(v.first, v.second);
+                    }
+                    if (p->rawProperties.size() > 0) {
+                        sol::table t;
+                        if (copied->kvp.find("properties") != copied->kvp.end()) {
+                            t = copied->getDyn("properties");
+                        } else {
+                            t = copied->kvp.insert({ "properties", sol::table(lua, sol::create) }).first->second;
+                        }
+                        for (auto& [k, v] : p->rawProperties) {
+                            t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
+                        }
+                    }
+                }
+            }
+            for (auto& v : baseObject->kvp) {
+                copied->setDyn(v.first, v.second);
+            }
+            if (baseObject->rawProperties.size() > 0) {
+                sol::table t;
+                if (copied->kvp.find("properties") != copied->kvp.end()) {
+                    t = copied->getDyn("properties");
+                } else {
+                    t = copied->kvp.insert({ "properties", sol::table(lua, sol::create) }).first->second;
+                }
+                for (auto& [k, v] : baseObject->rawProperties) {
+                    t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
+                }
+            }
+            return copied;
+        }
+    }
+
+    // basic object, original didn't exist
+    auto copied = std::make_unique<Object>(lua);
+    return copied;
 }
 
 void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
@@ -168,7 +329,8 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         "bbox_right",   sol::readonly_property(&Object::bboxRight),
         "bbox_bottom",  sol::readonly_property(&Object::bboxBottom),
         "bbox_top",     sol::readonly_property(&Object::bboxTop),
-        "bbox_top",     sol::readonly_property(&Object::bboxTop),
+        "bbox_width",     sol::readonly_property(&Object::bboxWidth),
+        "bbox_height",     sol::readonly_property(&Object::bboxHeight),
         "depth",        &Object::depth,
         "visible",      &Object::visible,
         sol::meta_function::index,      &Object::getDyn,

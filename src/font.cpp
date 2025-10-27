@@ -1,5 +1,5 @@
 #include "font.h"
-#include "mathhelper.h"
+#include "util/mathhelper.h"
 #include "game.h"
 
 void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {

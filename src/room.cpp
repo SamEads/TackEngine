@@ -95,25 +95,27 @@ Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
                 std::string objectIndex = i["object_index"];
                 float x = i["x"];
                 float y = i["y"];
+                BaseObject* base = objMgr.baseClasses[objectIndex].object.as<BaseObject*>();
                 auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<BaseObject*>());
                 obj->xScale = i.value("scale_x", 1);
                 obj->yScale = i.value("scale_y", 1);
                 obj->imageAngle = i.value("rotation", 0);
                 obj->imageIndex = i["image_index"];
                 obj->imageSpeedMod = i["image_speed"];
-                for (auto& prop : i["properties"]) {
-                    for (auto& [k, v] : prop.items()) {
-                        if (lua[v.get<std::string>()] != sol::lua_nil) {
-                            obj->setDyn(k, lua[v.get<std::string>()]);
-                        }
-                        else if (v.is_number()) {
-                            obj->setDyn(k, sol::make_object(lua, v.get<float>()));
-                        }
-                        else if (v.is_boolean()) {
-                            obj->setDyn(k, sol::make_object(lua, v.get<bool>()));
-                        }
-                        else if (v.is_string()) {
-                            obj->setDyn(k, sol::make_object(lua, v.get<std::string>()));
+                if (i["properties"].size() > 0) {
+                    bool hadProperties = false;
+                    if (obj->kvp.find("properties") == obj->kvp.end()) {
+                        obj->setDyn("properties", sol::table(lua, sol::create));
+                    }
+                    sol::table props = obj->getDyn("properties");
+                    auto& origProps = obj->self->rawProperties;
+                    for (auto& prop : i["properties"]) {
+                        for (auto& [k, v] : prop.items()) {
+                            auto& origProp = origProps.find(k);
+                            if (origProp == origProps.end()) {
+                                continue;
+                            }
+                            props[k] = FieldCreateFromProperty(k, origProp->second.first, v, lua);
                         }
                     }
                 }
@@ -124,12 +126,9 @@ Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
         }
         if (type == "background") {
             std::unique_ptr<Background> bg = std::make_unique<Background>();
-            bg->tiledX = l["tiled_x"];
-            bg->tiledY = l["tiled_y"];
-            bg->speedX = l["speed_x"];
-            bg->speedY = l["speed_y"];
-            bg->x = l["x"];
-            bg->y = l["y"];
+            bg->tiledX = l["tiled_x"], bg->tiledY = l["tiled_y"];
+            bg->speedX = l["speed_x"], bg->speedY = l["speed_y"];
+            bg->x = l["x"], bg->y = l["y"];
             bg->visible = l["visible"];
             bg->depth = depth;
             bg->name = l["name"];
@@ -217,9 +216,6 @@ void Room::update() {
         instance->runScript("step", this);
         Game::get().profiler.finish(std::to_string(instance->id));
         double t = Game::get().profiler.getMS(std::to_string(instance->id));
-        if (t > 0.1) {
-            std::cout << instance->identifier << ": " << t << "\n";
-        }
     }
     addQueue();
     Game::get().profiler.finish("step");
@@ -234,15 +230,15 @@ void Room::update() {
 
 void Room::draw(float alpha) {
     auto target = Game::get().currentRenderer;
-    sf::Vector2u gameSize = target->getSize();
 
-    sf::View view = target->getView();
-    float sw = cameraWidth;
-    float sh = cameraHeight;
+    sf::Vector2u gameSize = target->getSize();
+    sf::View view({ { 0, 0 }, { cameraWidth, cameraHeight } });
+    float cw = cameraWidth;
+    float ch = cameraHeight;
     float cx = lerp(cameraPrevX, cameraX, alpha);
     float cy = lerp(cameraPrevY, cameraY, alpha);
-    view.setSize({ 256, 224 });
-    view.setCenter({ cx + sw / 2.0f, cy + sh / 2.0f });
+    view.setSize({ cameraWidth * 2, cameraHeight * 2 });
+    view.setCenter({ cx + cw / 2.0f, cy + ch / 2.0f });
     target->setView(view);
     
     std::vector<Drawable*> drawables;
@@ -294,6 +290,14 @@ void Room::draw(float alpha) {
         d->endDraw(this, alpha);
     }
 
+    sf::RectangleShape rs;
+    rs.setPosition({ cx, cy });
+    rs.setSize({ cw, ch });
+    rs.setOutlineColor({ 255, 0, 0, 255 });
+    rs.setOutlineThickness(1);
+    rs.setFillColor({ 0, 0, 0, 0 });
+    target->draw(rs);
+
     target->setView(target->getDefaultView());
 
     for (auto& d : drawables) {
@@ -332,101 +336,12 @@ std::vector<Object::Reference> Room::objectGetList(BaseObject* baseType) {
     return v;
 }
 
-void Tilemap::draw(Room* room, float alpha) {
-    int tileWidth = tileset->tileWidth;
-    int tileHeight = tileset->tileHeight;
-
-    float cx = lerp(room->cameraPrevX, room->cameraX, alpha);
-    float cy = lerp(room->cameraPrevY, room->cameraY, alpha);
-
-    int thisCx = (cx / tileWidth) - 1;
-    int thisW = static_cast<int>(ceilf(room->cameraWidth / (float)tileWidth)) + 2;
-    
-    int thisCy = (cy / tileHeight) - 1;
-    int thisH = static_cast<int>(ceilf(room->cameraHeight / (float)tileHeight)) + 2;
-
-    int fullW = thisCx + std::min(thisW, tileCountX + 1);
-    int fullH = thisCy + std::min(thisH, tileCountY + 1);
-
-    int padding = tileset->padding;
-
-    sf::Sprite s(tileset->tex);
-    float halfWidth = tileWidth / 2;
-    float halfHeight = tileHeight / 2;
-    s.setScale({ 1, 1 });
-    s.setOrigin({ halfWidth, halfHeight });
-    s.setRotation(sf::degrees(0));
-    s.setColor({ 255, 255, 255, 255 });
-    auto target = Game::get().currentRenderer;
-
-    va.clear();
-
-    static int timer = 0;
-    timer++;
-    int totalTiles = tileData.size();
-    for (int xx = thisCx; xx < fullW; ++xx) {
-        for (int yy = thisCy; yy < fullH; ++yy) {
-            int pos = xx + (yy * tileCountX);
-            if (pos >= totalTiles || pos < 0) {
-                continue;
-            }
-
-            int tile = tileData[pos];
-            int mask = (1 << 19) - 1;
-            if ((tile & mask) == 0) {
-                continue;
-            }
-            
-            bool mirror = (tile & (1 << 28));
-            bool flip = (tile & (1 << 29));
-            bool rotate = (tile & (1 << 30));
-            tile = tile & mask;
-
-            int tileX = tile % tileset->tileCountX;
-            int tileY = tile / tileset->tileCountX;
-
-            float scaleX = (mirror) ? -1 : 1;
-            float scaleY = (flip) ? -1 : 1;
-            
-            float x = (xx * (float)tileWidth) + halfWidth;
-            float y = (yy * (float)tileHeight) + halfHeight;
-
-            s.setScale({ scaleX, scaleY }); 
-            if (rotate) {
-                s.setRotation(sf::degrees(90));
-            }
-
-            int texX = padding + tileX * (tileWidth + 2 * padding);
-            int texY = padding + tileY * (tileHeight + 2 * padding);
-            if (tileX == 2 && tileY == 0) {
-            }
-
-            s.setTextureRect(sf::IntRect(
-                { texX, texY },
-                { (int)tileWidth, (int)tileHeight }
-            ));
-
-            s.setPosition({ (xx * (float)tileWidth) + halfWidth, (yy * (float)tileHeight) + halfHeight });
-
-            target->draw(s);
-
-            if (rotate) {
-                s.setRotation(sf::degrees(0));
-            }
-        }
-        sf::RenderStates rs;
-        rs.texture = &tileset->tex;
-        rs.coordinateType = sf::CoordinateType::Pixels;
-        target->draw(va, rs);
-    }
-}
-
 void Background::draw(Room* room, float alpha) {
     float cx = lerp(room->cameraPrevX, room->cameraX, alpha);
     float cy = lerp(room->cameraPrevY, room->cameraY, alpha);
 
-    float x = cx - 10;
-    float y = cy - 10;
+    float x = cx - 1;
+    float y = cy - 1;
 
     if (spriteIndex) {
         sf::Sprite* spr = spriteIndex->sprite.get();
@@ -454,7 +369,7 @@ void Background::draw(Room* room, float alpha) {
         }
     }
     else {
-        sf::RectangleShape rs({ room->cameraWidth + 20, room->cameraHeight + 20 });
+        sf::RectangleShape rs({ room->cameraWidth + 2, room->cameraHeight + 2 });
         rs.setTexture(&SpriteManager::get().whiteTexture);
         rs.setFillColor(color);
         rs.setPosition({ x, y });

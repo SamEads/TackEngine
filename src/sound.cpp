@@ -1,5 +1,5 @@
 #include "sound.h"
-#include "mathhelper.h"
+#include "util/mathhelper.h"
 #include "vendor/json.hpp"
 #include <fstream>
 
@@ -33,7 +33,7 @@ void SoundManager::update() {
 						const std::string str = v.data->file.string();
 						auto& p = v.toPlay;
 						auto& buf = v.buffer;
-						sounds[str].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf) });
+						sounds[str].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf), 0 });
 						sounds[str].sounds.back().timer.restart();
 
 						sounds[str].sounds.back().sound->play();
@@ -50,6 +50,7 @@ void SoundManager::update() {
 					if (soundStatus == sf::Sound::Status::Stopped || volume <= 0.0f) {
 						if (volume <= 0.0f || it->timer.getElapsedTime().asSeconds() > v.buffer.getDuration().asSeconds() + 1.0f) {
 							it = vec.erase(it);
+							v.soundIndexes.erase(it->index);
 							continue;
 						}
 					}
@@ -161,51 +162,103 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
         return isPlaying(sound);
     };
     lua["sound"]["play"] = [&](const ScriptSound& sound, float gain, float pitch) {
-        play(sound, pitch, sound.volume * gain);
+        return play(sound, pitch, sound.volume * gain);
     };
-    lua["sound"]["stop"] = [&](const ScriptSound& sound) {
+    lua["sound"]["stop"] = [&](sol::object sound) {
         stop(sound);
     };
 }
 
-void SoundManager::play(const ScriptSound& sound, float pitch, float volume, bool loop) {
+SoundReference SoundManager::play(const ScriptSound& soundIndex, float pitch, float volume, bool loop) {
 	std::lock_guard<std::mutex> s(mutex);
 
-	const std::string soundStr = sound.file.string();
+	const std::string soundStr = soundIndex.file.string();
 	if (sounds.find(soundStr) == sounds.end()) {
 		sounds[soundStr].deferLoad = true;
-		sounds[soundStr].data = &sound;
-		// bool loadedSound = sounds[soundStr].buffer.loadFromFile(sound.file);
+		sounds[soundStr].data = &soundIndex;
 	}
 
+	Sounds& soundHolder = sounds[soundStr];
+	auto& soundsVector = soundHolder.sounds;
+
+	// While sound is still loading, if for whatever reason if it needs to wait longer, don't add multiple sounds.
 	if (sounds[soundStr].deferLoad) {
-		sounds[soundStr].playOnLoad = true;
-		sounds[soundStr].toPlay = Sounds::ToPlay { pitch, volume, loop };
+		soundHolder.toPlay = Sounds::ToPlay { pitch, volume, loop };
+		soundHolder.data = &soundIndex;
+		soundHolder.playOnLoad = true;
+		return SoundReference { false, nullptr, 0 };
 	}
 	else {
-		auto& buf = sounds[soundStr].buffer;
-		sounds[soundStr].sounds.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(buf) });
-		sounds[soundStr].sounds.back().timer.restart();
-		sounds[soundStr].sounds.back().sound->play();
-		sounds[soundStr].sounds.back().sound->setPitch(pitch);
-		sounds[soundStr].sounds.back().sound->setVolume(volume * 100.0f);
-		sounds[soundStr].sounds.back().sound->setLooping(loop);
+		soundsVector.emplace_back(SoundData { sf::Clock(), std::make_unique<sf::Sound>(soundHolder.buffer), soundHolder.soundIndex });
+		auto& newSound = soundsVector.back();
+
+		newSound.timer.restart();
+		newSound.sound->play();
+		newSound.sound->setPitch(pitch);
+		newSound.sound->setVolume(volume * 100.0f);
+		newSound.sound->setLooping(loop);
+
+		SoundReference r;
+		r.valid = true;
+		r.index = soundHolder.soundIndex;
+		r.sounds = &soundHolder;
+		soundHolder.soundIndexes[r.index] = &newSound;
+		soundHolder.soundIndex++;
+
+		return r;
 	}
 }
 
-void SoundManager::stop(const ScriptSound& sound) {
+void SoundManager::stop(sol::object object) {
 	std::lock_guard<std::mutex> s(mutex);
 
-	const std::string soundStr = sound.file.string();
-	auto it = sounds.find(soundStr);
-	if (it != sounds.end()) {
-		auto& vec = (*it).second.sounds;
-		for (auto& sound : vec) {
-			float volume = sound.sound->getVolume();
-			fadeOutSounds.push_back(FadeOutSound { std::move(sound.sound), volume, 0.05f });
-			fadeOutSounds.back().timer.restart();
+	if (object.is<ScriptSound>()) {
+		const ScriptSound& sound = object.as<ScriptSound>();
+		const std::string soundStr = sound.file.string();
+		auto it = sounds.find(soundStr);
+		if (it != sounds.end()) {
+			auto& vec = (*it).second.sounds;
+			for (auto& sound : vec) {
+				float volume = sound.sound->getVolume();
+				sound.sound->setVolume(volume * 0.2f);
+				volume *= 0.2f;
+				fadeOutSounds.push_back(FadeOutSound { std::move(sound.sound), volume, 0.05f });
+				fadeOutSounds.back().timer.restart();
+			}
+			vec.clear();
+			it->second.soundIndexes.clear();
 		}
-		vec.clear();
+	}
+	else {
+		SoundReference& ref = object.as<SoundReference>();
+		if (ref.valid) {
+			auto it = ref.sounds->soundIndexes.find(ref.index);
+			if (it == ref.sounds->soundIndexes.end()) {
+				return;
+			}
+
+			if (it->second->sound) {
+				std::unique_ptr<sf::Sound>& sRef = it->second->sound;
+
+				// make quiet without clipping
+				float volume = sRef->getVolume();
+				sRef->setVolume(volume * 0.2f);
+				volume *= 0.2f;
+				
+				fadeOutSounds.push_back(FadeOutSound { std::move(sRef), volume, 0.05f });
+				fadeOutSounds.back().timer.restart();
+				
+				ref.sounds->soundIndexes.erase(it);
+			}
+
+			SoundData& data = *it->second;
+			auto it2 = std::find_if(ref.sounds->sounds.begin(), ref.sounds->sounds.end(), [&data](const SoundData& otherData) {
+				return &otherData == &data;
+			});
+			if (it2 != ref.sounds->sounds.end()) {
+				ref.sounds->sounds.erase(it2);
+			}
+		}
 	}
 }
 
@@ -232,6 +285,9 @@ void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& a
 		play(sound);
     };
     lua["music"]["set_loop_points"] = [&](float a, float b) {
+		if (a == 0 && b == 0) {
+			return;
+		}
         setLoopPoints(a, b);
     };
     lua["music"]["stop"] = [&]() {

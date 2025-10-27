@@ -33,7 +33,8 @@ if(!USE_LUA_JIT)
 endif()
 
 add_executable(${PROJECT_NAME})
-target_compile_options(${PROJECT_NAME} PRIVATE -Oz)
+#target_compile_options(${PROJECT_NAME} PRIVATE -Oz)
+set(CMAKE_CXX_FLAGS "/Ox /EHsc /MP")
 
 target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE

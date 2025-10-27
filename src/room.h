@@ -3,17 +3,7 @@
 #include <iostream>
 #include "object.h"
 #include "collision.h"
-
-class Tileset;
-class Tilemap : public Drawable {
-public:
-    sf::VertexArray va;
-    std::vector<unsigned int> tileData;
-    int tileCountX, tileCountY;
-    std::string name;
-    Tileset* tileset;
-    void draw(Room* room, float alpha) override;
-};
+#include "tilemap.h"
 
 class Background : public Drawable {
 public:

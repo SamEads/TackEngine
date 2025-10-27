@@ -5,25 +5,16 @@
 #include <SFML/Graphics.hpp>
 #include <sol/sol.hpp>
 #include <deque>
+#include "vendor/json.hpp"
 #include "sprite.h"
-#include "mathhelper.h"
-
-class Room;
-
-class Drawable {
-public:
-    int depth = 0;
-    bool visible = true;
-    bool drawsGui = false;
-    virtual void draw(Room* room, float alpha) {}
-    virtual void beginDraw(Room* room, float alpha) {}
-    virtual void endDraw(Room* room, float alpha) {}
-    virtual void drawGui(Room* room, float alpha) {}
-};
+#include "util/mathhelper.h"
+#include "drawable.h"
 
 using ObjectId = int;
 class Object;
 class BaseObject;
+class Room;
+
 class Object : public Drawable {
 public:
     ObjectId id;
@@ -49,11 +40,6 @@ public:
         }
         return false;
     }
-    /*
-    virtual Reference makeReference() {
-        return Reference { id, sol::make_object(lua, this) };
-    }
-    */
 
     sol::state& lua;
     std::unordered_map<std::string, sol::object> kvp;
@@ -80,6 +66,7 @@ public:
         this->drawsGui = true;
     }
 
+    // Retrieve the left side of the bounding box with scaling applied.
     const inline float bboxLeft() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
@@ -91,13 +78,18 @@ public:
         return x + hitboxLeft - originX;
     }
 
-    const inline float bboxRight() const {
+    const inline float bboxWidth() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
-        const float hitboxWidth = spr->hitbox.size.x * fabsf(xScale);
-        return bboxLeft() + hitboxWidth;
+        return spr->hitbox.size.x * fabsf(xScale);
     }
 
+    // Retrieve the right side of the bounding box with scaling applied.
+    const inline float bboxRight() const {
+        return bboxLeft() + bboxWidth();
+    }
+
+    // Retrieve the top of the bounding box with scaling applied.
     const inline float bboxTop() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
@@ -109,89 +101,25 @@ public:
         return y + hitboxTop - originY;
     }
 
-    const inline float bboxBottom() const {
+    const inline float bboxHeight() const {
         SpriteIndex* spr = (maskIndex) ? maskIndex : spriteIndex;
         if (!spr) return 0;
-        const float hitboxHeight = spr->hitbox.size.y * fabsf(yScale);
-        return bboxTop() + hitboxHeight;
+        return spr->hitbox.size.y * fabsf(yScale);
     }
 
-    sf::FloatRect getRectangle() const {
+    // Retrieve the bottom of the bounding box with scaling applied.
+    const inline float bboxBottom() const {
+        return bboxTop() + bboxHeight();
+    }
+
+    inline sf::FloatRect getRectangle() const {
         sf::FloatRect rect;
         rect.position = { bboxLeft(), bboxTop() };
         rect.size = { bboxRight() - rect.position.x, bboxBottom() - rect.position.y };
         return rect;
     }
 
-    std::vector<sf::Vector2f> getPoints() const {
-        auto it = kvp.find("points");
-        if (it != kvp.end()) {
-            sol::table points = it->second.as<sol::table>();
-
-            std::vector<sf::Vector2f> v;
-            v.reserve(points.size());
-
-            for (auto& point : points) {
-                auto t = point.second.as<sol::table>();
-                float px = t.get<float>("x");
-                float py = t.get<float>("y");
-                v.push_back({ px + x, py + y });
-            }
-            return v;
-        }
-
-        if (imageAngle == 0) {
-            sf::FloatRect rect = getRectangle();
-            return std::vector<sf::Vector2f> {
-                { rect.position.x, rect.position.y },
-                { rect.position.x + rect.size.x, rect.position.y },
-                { rect.position.x + rect.size.x, rect.position.y + rect.size.y },
-                { rect.position.x, rect.position.y + rect.size.y }
-            };
-        }
-
-        sf::FloatRect hb = {};
-        if (maskIndex) {
-            hb = maskIndex->hitbox;
-        }
-        else if (spriteIndex) {
-            hb = spriteIndex->hitbox;
-        }
-        sf::Vector2f unscaledCorners[4] = {
-            { hb.position.x, hb.position.y }, // top-left
-            { hb.position.x + hb.size.x, hb.position.y }, // top-right
-            { hb.position.x + hb.size.x, hb.position.y + hb.size.y }, // bottom-right
-            { hb.position.x, hb.position.y + hb.size.y } // bottom-left
-        };
-
-        std::vector<sf::Vector2f> transformed;
-        transformed.reserve(4);
-
-        float rad = Deg2Rad(imageAngle);
-        float cosA = std::cos(rad);
-        float sinA = std::sin(rad);
-
-        for (auto& corner : unscaledCorners) {
-            sf::Vector2f scaled = { corner.x * xScale, corner.y * yScale };
-
-            float originX = (spriteIndex) ? spriteIndex->originX : 0;
-            float originY = (spriteIndex) ? spriteIndex->originY : 0;
-            scaled.x -= originX * xScale;
-            scaled.y -= originY * yScale;
-
-            sf::Vector2f rotated = {
-                scaled.x * cosA - scaled.y * sinA,
-                scaled.x * sinA + scaled.y * cosA
-            };
-
-            rotated.x += x;
-            rotated.y += y;
-
-            transformed.push_back(rotated);
-        }
-
-        return transformed;
-    }
+    std::vector<sf::Vector2f> getPoints() const;
 
     void setDyn(const std::string& key, sol::main_object obj) {
         auto it = kvp.find(key);
@@ -221,9 +149,50 @@ public:
     void drawGui(Room* room, float alpha) override;
 };
 
+enum class ConvertType {
+    REAL = 0,
+    INTEGER = 1,
+    STRING = 2,
+    BOOLEAN = 3,
+    EXPRESSION = 4,
+    ASSET = 5,
+    LIST = 6,
+    COLOR = 7
+};
+
+inline sol::object FieldCreateFromProperty(const std::string& k, ConvertType type, const nlohmann::json& v, sol::state& lua) {
+    if ((type == ConvertType::ASSET || type == ConvertType::STRING) && lua[v.get<std::string>()] != sol::lua_nil) {
+        return lua[v.get<std::string>()];
+    }
+    else if (type == ConvertType::INTEGER) {
+        if (v.is_number()) {
+            return sol::make_object(lua, v.get<int>());
+        }
+        return sol::make_object(lua, std::stoi(v.get<std::string>()));
+    }
+    else if (type == ConvertType::REAL) {
+        if (v.is_number()) {
+            return sol::make_object(lua, v.get<float>());
+        }
+        return sol::make_object(lua, std::stof(v.get<std::string>()));
+    }
+    else if (type == ConvertType::BOOLEAN) {
+        if (v.is_boolean()) {
+            return sol::make_object(lua, v.get<bool>());
+        }
+        bool boolValue = (v.get<std::string>() == "True") ? true : false;
+        return sol::make_object(lua, boolValue);
+    }
+    else if (type == ConvertType::STRING) {
+        return sol::make_object(lua, v.get<std::string>());
+    }
+
+    return sol::make_object(lua, sol::lua_nil);
+};
+
 class BaseObject : public Object {
 public:
-    int fnasdngasdkg = 0;
+    std::unordered_map<std::string, std::pair<ConvertType, nlohmann::json>> rawProperties;
     BaseObject(sol::state& lua) : Object(lua) {}
 };
 
@@ -243,48 +212,7 @@ public:
         return om;
     }
 
-    std::unique_ptr<Object> make(sol::state& lua, BaseObject* baseObject) {
-        if (baseObject != NULL) {
-            auto& list = baseClasses;
-
-            auto it = std::find_if(list.begin(), list.end(), [&baseObject](const std::pair<std::string, ScriptedInfo>& p) {
-                sol::object obj = p.second.object;
-                auto uniquePtr = obj.as<BaseObject*>();
-                return uniquePtr == baseObject;
-            });
-
-            if (it != list.end()) {
-                auto copied = it->second.create(baseObject);
-
-                std::deque<BaseObject*> parents;
-                BaseObject* f = baseObject->parent;
-                if (f) {
-                    while (true) {
-                        if (f) {
-                            parents.push_back(f);
-                            f = f->parent;
-                        }
-                        else break;
-                    }
-                    while (!parents.empty()) {
-                        Object* p = parents.front();
-                        parents.pop_front();
-                        for (auto& v : p->kvp) {
-                            copied->setDyn(v.first, v.second);
-                        }
-                    }
-                }
-                for (auto& v : baseObject->kvp) {
-                    copied->setDyn(v.first, v.second);
-                }
-                return copied;
-            }
-        }
-
-        // basic object, original didn't exist
-        auto copied = std::make_unique<Object>(lua);
-        return copied;
-    }
+    std::unique_ptr<Object> make(sol::state& lua, BaseObject* baseObject);
 
     void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 };

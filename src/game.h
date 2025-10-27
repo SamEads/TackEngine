@@ -2,13 +2,12 @@
 
 #include <SFML/Graphics.hpp>
 #include "room.h"
-#include "profiler.h"
+#include "util/profiler.h"
 
 class Game {
 public:
     Profiler profiler;
     sol::state lua;
-    float fps = 0;
     bool letterbox = true;
     sf::RenderTarget* currentRenderer;
     std::unique_ptr<sf::RenderTexture> consoleRenderer;
@@ -17,13 +16,15 @@ public:
     std::unique_ptr<Room> queuedRoom;
     std::filesystem::path assetsFolder = "assets";
     std::unordered_map<std::string, RoomReference> rooms;
+    std::unordered_map<std::string, sol::object> kvp;
+    float fps = 0;
     static Game& get() {
         static Game game;
         return game;
     }
     Room* gotoRoom(const RoomReference& room);
     Room* getRoom();
-    std::unordered_map<std::string, sol::object> kvp;
+    void initializeLua(sol::state& state, const std::filesystem::path& assets);
     void setKVP(const std::string& key, sol::main_object obj) {
         auto it = kvp.find(key);
         if (it == kvp.end()) {
@@ -40,5 +41,4 @@ public:
         }
         return it->second;
     }
-    void initializeLua(sol::state& state, const std::filesystem::path& assets);
 };

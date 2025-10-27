@@ -23,7 +23,7 @@ CollisionResult polygonsIntersect(const std::vector<sf::Vector2f>& polyA, const 
         }
 
         return axes;
-        };
+    };
 
     auto project = [](const std::vector<sf::Vector2f>& poly, const sf::Vector2f& axis) {
         float min = poly[0].x * axis.x + poly[0].y * axis.y;
@@ -37,7 +37,7 @@ CollisionResult polygonsIntersect(const std::vector<sf::Vector2f>& polyA, const 
         }
 
         return std::make_pair(min, max);
-        };
+    };
 
     auto axes = getAxes(polyA);
     auto axesB = getAxes(polyB);

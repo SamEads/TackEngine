@@ -5,7 +5,7 @@ extern "C" {
 #endif
 #include <fstream>
 #include "vendor/json.hpp"
-#include "timer.h"
+#include "util/timer.h"
 #include "sprite.h"
 #include "object.h"
 #include "tileset.h"
@@ -17,6 +17,9 @@ extern "C" {
 #include "font.h"
 #include <ProcessInfo.h>
 #include <SystemInformation.h>
+#define GMC_EMBEDDED
+#define GMCONVERT_IMPLEMENTATION
+#include "util/gmconvert.h"
 
 using namespace nlohmann;
 
@@ -27,6 +30,7 @@ void InitializeLuaEnvironment(sol::state& lua) {
     std::filesystem::path scriptsPath = (std::filesystem::path(assets.string()) / "scripts" / "?.lua");
     lua["package"]["path"] = scriptsPath.string();
 
+    // Initialize math library extension
     sol::table math = lua["math"];
     math["point_distance"] = PointDistance;
     math["sign"] = signum;
@@ -48,10 +52,6 @@ void InitializeLuaEnvironment(sol::state& lua) {
     Keys::get().initializeLua(lua);
     Game::get().initializeLua(lua, assets);
 }
-
-#define GMC_EMBEDDED
-#define GMCONVERT_IMPLEMENTATION
-#include "gmconvert.h"
 
 int main() {
     sol::state& lua = Game::get().lua;
@@ -80,7 +80,7 @@ int main() {
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
     auto& window = Game::get().window;
 
-    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
+    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256 * 2, 224 * 2 });
 
     lua["game"]["init"](lua["game"]);
 
@@ -109,7 +109,6 @@ int main() {
             if (game.room) {
                 game.room->update();
             }
-            // std::cout << "step: " << game.profiler.getMS("beginstep") << "\t" << game.profiler.getMS("step") << "\t" << game.profiler.getMS("endstep") << "ms\n";
         }
 
         Game::get().currentRenderer = Game::get().consoleRenderer.get();
