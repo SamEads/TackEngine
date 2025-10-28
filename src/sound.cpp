@@ -6,6 +6,22 @@
 using namespace nlohmann;
 
 void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
+    for (auto& it : std::filesystem::directory_iterator(assets / "sounds")) {
+        if (!it.is_regular_file()) continue;
+
+        std::string soundName = it.path().filename().replace_extension("").string();
+		if (lua[soundName] != sol::lua_nil) continue; // already contains sound
+
+        std::filesystem::path soundFile = it.path();
+
+		SoundAsset asset;
+		asset.name = soundName;
+		asset.path = soundFile;
+		asset.volume = 1.0f;
+
+        lua[soundName] = asset;
+	}
+
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "sounds")) {
         if (!it.is_directory()) continue;
 
@@ -79,6 +95,49 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		}
 		return false;
     };
+
+    lua["sound"]["get_position"] = [&](sol::object sound) {
+		if (!sound.is<SoundInstanceReference>()) {
+			return 0.0f;
+		}
+
+		auto& inst = sound.as<SoundInstanceReference>();
+		auto it = inst.buffer->instances.find(inst.id);
+		if (it == inst.buffer->instances.end()) {
+			return 0.0f;
+		}
+
+		float off = it->second->sound->getPlayingOffset().asSeconds();
+		return off;
+	};
+
+	lua["sound"]["set_loops"] = [&](sol::object sound, bool loops) {
+		if (!sound.is<SoundInstanceReference>()) {
+			return;
+		}
+
+		auto& inst = sound.as<SoundInstanceReference>();
+		auto it = inst.buffer->instances.find(inst.id);
+		if (it == inst.buffer->instances.end()) {
+			return;
+		}
+
+		it->second->sound->setLooping(loops);
+	};
+
+    lua["sound"]["set_position"] = [&](sol::object sound, float position) {
+		if (!sound.is<SoundInstanceReference>()) {
+			return;
+		}
+
+		auto& inst = sound.as<SoundInstanceReference>();
+		auto it = inst.buffer->instances.find(inst.id);
+		if (it == inst.buffer->instances.end()) {
+			return;
+		}
+
+		it->second->sound->setPlayingOffset(sf::seconds(position));
+	};
 
     lua["sound"]["stop"] = [&](sol::object sound) {
 		if (sound.is<SoundAsset>()) {

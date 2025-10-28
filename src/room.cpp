@@ -77,8 +77,6 @@ Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
 }
 
 void Room::load() {
-    auto& game = Game::get();
-
     auto jsonPath = roomReference->p / "data.json";
     std::ifstream i(jsonPath);
     json j = json::parse(i);
@@ -94,6 +92,7 @@ void Room::load() {
     for (auto& l : j["layers"]) {
         std::string type = l["layer_type"].get<std::string>();
         int depth = l["depth"];
+
         if (type == "instances") {
             for (auto& i : l["instances"]) {
                 std::string objectIndex = i["object_index"];
@@ -128,6 +127,7 @@ void Room::load() {
                 obj->yPrev = obj->y;
             }
         }
+
         if (type == "background") {
             std::unique_ptr<Background> bg = std::make_unique<Background>();
             bg->tiledX = l["tiled_x"], bg->tiledY = l["tiled_y"];
@@ -145,6 +145,7 @@ void Room::load() {
             }
             backgrounds.push_back(std::move(bg));
         }
+
         if (type == "tiles") {
             std::unique_ptr<Tilemap> map = std::make_unique<Tilemap>();
             map->depth = depth;
@@ -159,17 +160,29 @@ void Room::load() {
         }
     }
 
+    createAndRoomStartEvents();
+}
+
+// Room -> "Create"
+// Instances -> "Create"
+// Room -> Creation Code
+// Room -> "Room Start"
+// Instances -> "Room Start"
+void Room::createAndRoomStartEvents() {
+    auto& game = Game::get();
+
     auto create = kvp.find("create");
     if (create != kvp.end()) {
         create->second.as<sol::safe_function>()(this);
-        addQueue();
     }
-
     addQueue();
+
     for (auto& objUnique : instances) {
         objUnique->runScript("create", this);
     }
+    addQueue();
 
+    // Room creation code specific to this room
     lua["room"] = this;
     std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(roomReference->name + ".lua");
     if (std::filesystem::exists(roomScript)) {
@@ -180,6 +193,7 @@ void Room::load() {
         }
     }
     lua["room"] = nullptr;
+    addQueue();
 
     auto start = kvp.find("room_start");
     if (start != kvp.end()) {
@@ -199,6 +213,7 @@ void Room::load() {
 void Room::update() {
     cameraPrevX = cameraX;
     cameraPrevY = cameraY;
+
     for (auto& i : instances) {
         i->xPrev = i->x;
         i->yPrev = i->y;
@@ -207,6 +222,7 @@ void Room::update() {
         }
     }
 
+    // Begin Step
     Game::get().profiler.start("beginstep");
     for (auto& instance : instances) {
         instance->runScript("begin_step", this);
@@ -214,16 +230,18 @@ void Room::update() {
     addQueue();
     Game::get().profiler.finish("beginstep");
 
+    // Step
     Game::get().profiler.start("step");
     for (auto& instance : instances) {
         Game::get().profiler.start(std::to_string(instance->id));
         instance->runScript("step", this);
         Game::get().profiler.finish(std::to_string(instance->id));
-        double t = Game::get().profiler.getMS(std::to_string(instance->id));
+        // double t = Game::get().profiler.getMS(std::to_string(instance->id));
     }
     addQueue();
     Game::get().profiler.finish("step");
 
+    // End Step
     Game::get().profiler.start("endstep");
     for (auto& instance : instances) {
         instance->runScript("end_step", this);
@@ -239,8 +257,8 @@ void Room::draw(float alpha) {
     sf::View view({ { 0, 0 }, { cameraWidth, cameraHeight } });
     float cw = cameraWidth;
     float ch = cameraHeight;
-    float cx = lerp(cameraPrevX, cameraX, alpha);
-    float cy = lerp(cameraPrevY, cameraY, alpha);
+    float cx = (lerp(std::floorf(cameraPrevX), std::floorf(cameraX), alpha));
+    float cy = (lerp(std::floorf(cameraPrevY), std::floorf(cameraY), alpha));
     view.setSize({ cameraWidth, cameraHeight });
     view.setCenter({ cx + cw / 2.0f, cy + ch / 2.0f });
     target->setView(view);
@@ -287,9 +305,11 @@ void Room::draw(float alpha) {
     for (auto& d : drawables) {
         d->beginDraw(this, alpha);
     }
+
     for (auto& d : drawables) {
         d->draw(this, alpha);
     }
+
     for (auto& d : drawables) {
         d->endDraw(this, alpha);
     }

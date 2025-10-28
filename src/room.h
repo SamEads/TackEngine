@@ -26,6 +26,7 @@ public:
 class Room {
 private:
     const RoomReference* roomReference;
+    void createAndRoomStartEvents();
 public:
     static void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 

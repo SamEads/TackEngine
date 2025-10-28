@@ -35,6 +35,9 @@ void InitializeLuaEnvironment(sol::state& lua) {
     math["point_distance"] = PointDistance;
     math["sign"] = signum;
     math["lerp"] = lerp;
+    math["round"] = std::roundf;
+    math["floor"] = std::floorf;
+    math["ceil"] = std::ceilf;
     math["intersects"] = [](sol::table a, sol::table b) {
         sf::FloatRect ra = { { a.get<float>(1), a.get<float>(2) }, { a.get<float>(3), a.get<float>(4) } };
         sf::FloatRect rb = { { b.get<float>(1), b.get<float>(2) }, { b.get<float>(3), b.get<float>(4) } };
@@ -80,7 +83,7 @@ int main() {
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
     auto& window = Game::get().window;
 
-    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256 * 8, 224 * 8 });
+    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
 
     lua["game"]["init"](lua["game"]);
 
@@ -109,12 +112,18 @@ int main() {
             if (game.room) {
                 game.room->update();
             }
+            if (Keys::get().pressed(sf::Keyboard::Scancode::F5)) {
+                const sf::Texture& t = Game::get().consoleRenderer.get()->getTexture();
+                sf::Image i = t.copyToImage();
+                i.saveToFile("_.png");
+            }
         }
 
         Game::get().currentRenderer = Game::get().consoleRenderer.get();
         Game::get().consoleRenderer->clear();
         if (game.room) {
             float alpha = t.getAlpha();
+            alpha = 1; // dbg
             game.room->draw(alpha);
         }
         Game::get().consoleRenderer->display();
