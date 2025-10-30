@@ -183,7 +183,7 @@ inline sol::object FieldCreateFromProperty(const std::string& k, ConvertType typ
         bool boolValue = (v.get<std::string>() == "True") ? true : false;
         return sol::make_object(lua, boolValue);
     }
-    else if (type == ConvertType::STRING) {
+    else if (type == ConvertType::STRING && !v.get<std::string>().empty()) {
         return sol::make_object(lua, v.get<std::string>());
     }
 

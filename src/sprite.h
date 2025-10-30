@@ -39,23 +39,7 @@ public:
         sf::Vector2f scale,
         sf::Vector2f origin,
         sf::Color color,
-        float rotation) const 
-    {
-        int frameCount = frames.size();
-        int frameIndex = static_cast<int>(frame) % frameCount;
-
-        int texX = frames[frameIndex].frameX;
-        int texY = frames[frameIndex].frameY;
-        sprite->setTextureRect({ { texX, texY }, { width, height } });
-
-        sprite->setPosition(position);
-        sprite->setOrigin(origin);
-        sprite->setScale(scale);
-        sprite->setColor(color);
-        sprite->setRotation(sf::degrees(rotation));
-
-        target.draw(*(sprite.get()));
-    }
+        float rotation) const;
 
     void draw(
         sf::RenderTarget& target,
@@ -63,23 +47,7 @@ public:
         float frame = 0,
         sf::Vector2f scale = { 1.0f, 1.0f },
         sf::Color color = sf::Color::White,
-        float rotation = 0) const 
-    {
-        int frameCount = frames.size();
-        int frameIndex = static_cast<int>(floorf(frame)) % frameCount;
-
-        int texX = frames[frameIndex].frameX;
-        int texY = frames[frameIndex].frameY;
-        sprite->setTextureRect({ { texX, texY }, { width, height } });
-
-        sprite->setPosition(position);
-        sprite->setOrigin({ static_cast<float>(originX), static_cast<float>(originY) });
-        sprite->setScale(scale);
-        sprite->setColor(color);
-        sprite->setRotation(sf::degrees(rotation));
-
-        target.draw(*(sprite.get()));
-    }
+        float rotation = 0) const;
 
 };
 

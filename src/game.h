@@ -18,6 +18,7 @@ public:
     std::filesystem::path assetsFolder = "assets";
     std::unordered_map<std::string, RoomReference> rooms;
     std::unordered_map<std::string, sol::object> kvp;
+    sf::Shader* currentShader;
     float fps = 0;
     static Game& get() {
         static Game game;

@@ -1,6 +1,7 @@
 #include <iostream>
 #include "shader.h"
 #include "sprite.h"
+#include "game.h"
 
 void ShaderManager::initializeLua(sol::state& lua) {
     lua.create_named_table("shader");
@@ -32,13 +33,13 @@ void ShaderManager::initializeLua(sol::state& lua) {
 
     lua["shader"]["bind"] = [&](sol::object shader) {
         if (shader == sol::lua_nil) {
-            sf::Shader::bind(nullptr);
+            Game::get().currentShader = nullptr;
+            return;
         }
-        else {
-            if (shader.is<Shader*>()) {
-                Shader* s = shader.as<Shader*>();
-                sf::Shader::bind(&s->baseShader);
-            }
+        
+        if (shader.is<Shader*>()) {
+            Shader* s = shader.as<Shader*>();
+            Game::get().currentShader = &s->baseShader;
         }
     };
 }

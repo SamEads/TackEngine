@@ -36,6 +36,9 @@ void InitializeLuaEnvironment(sol::state& lua) {
     math["sign"] = signum;
     math["lerp"] = lerp;
     math["round"] = std::roundf;
+    math["clamp"] = [](float v, float min, float max) {
+        return std::max(min, std::min(v, max));
+    };
     math["floor"] = std::floorf;
     math["ceil"] = std::ceilf;
     math["intersects"] = [](sol::table a, sol::table b) {

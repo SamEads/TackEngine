@@ -257,9 +257,8 @@ void Room::draw(float alpha) {
     sf::View view({ { 0, 0 }, { cameraWidth, cameraHeight } });
     float cw = cameraWidth;
     float ch = cameraHeight;
-    float cx = (lerp(std::floorf(cameraPrevX), std::floorf(cameraX), alpha));
-    float cy = (lerp(std::floorf(cameraPrevY), std::floorf(cameraY), alpha));
-    view.setSize({ cameraWidth, cameraHeight });
+    float cx = lerp(cameraPrevX, cameraX, alpha);
+    float cy = lerp(cameraPrevY, cameraY, alpha);
     view.setCenter({ cx + cw / 2.0f, cy + ch / 2.0f });
     target->setView(view);
     

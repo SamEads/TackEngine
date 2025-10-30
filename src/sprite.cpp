@@ -33,6 +33,42 @@ std::tuple<float, float> SpriteIndex::getTexelSize() {
     return { 1.0f / texSize.x, 1.0f / texSize.y };
 }
 
+void SpriteIndex::drawOrigin(sf::RenderTarget &target, sf::Vector2f position, float frame, sf::Vector2f scale, sf::Vector2f origin, sf::Color color, float rotation) const {
+    int frameCount = frames.size();
+    int frameIndex = static_cast<int>(frame) % frameCount;
+
+    int texX = frames[frameIndex].frameX;
+    int texY = frames[frameIndex].frameY;
+    sprite->setTextureRect({ { texX, texY }, { width, height } });
+
+    sprite->setPosition(position);
+    sprite->setOrigin(origin);
+    sprite->setScale(scale);
+    sprite->setColor(color);
+    sprite->setRotation(sf::degrees(rotation));
+
+    const sf::Sprite& r = *(sprite.get());
+    target.draw(r, Game::get().currentShader);
+}
+
+void SpriteIndex::draw(sf::RenderTarget &target, sf::Vector2f position, float frame, sf::Vector2f scale, sf::Color color, float rotation) const {
+    int frameCount = frames.size();
+    int frameIndex = static_cast<int>(floorf(frame)) % frameCount;
+
+    int texX = frames[frameIndex].frameX;
+    int texY = frames[frameIndex].frameY;
+    sprite->setTextureRect({ { texX, texY }, { width, height } });
+
+    sprite->setPosition(position);
+    sprite->setOrigin({ static_cast<float>(originX), static_cast<float>(originY) });
+    sprite->setScale(scale);
+    sprite->setColor(color);
+    sprite->setRotation(sf::degrees(rotation));
+
+    const sf::Sprite& r = *(sprite.get());
+    target.draw(r, Game::get().currentShader);
+}
+
 void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
     lua.new_usertype<SpriteIndex>(
         "SpriteIndex", sol::no_constructor,
@@ -57,25 +93,21 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
     };
     for (const auto& path : paths) {
         for (auto& it : std::filesystem::directory_iterator(path)) {
-            bool isPng = false;
-            if (!it.is_directory()) {
-                if (it.path().extension() != ".png") {
-                    continue;
-                }
-                else {
-                    isPng = true;
-                }
+            std::string identifier = it.path().filename().replace_extension("").string();
+            if (sprites.find(identifier) != sprites.end()) {
+                std::cout << identifier << "\n";
+                continue;
             }
-            int pad = 1;
+            if (!it.is_directory() && it.path().extension() != ".png") {
+                continue;
+            }
+            bool isPng = !it.is_directory();
+            int pad = 2;
             sf::Image src;
             int frameCount = 0;
             sf::Texture tex;
             std::vector<SpriteIndex::SpriteFrame> frameCoords;
             int frameCountX = -1, frameCountY = -1;
-            std::string identifier = it.path().filename().replace_extension("").string();
-            if (sprites.find(identifier) != sprites.end()) {
-                continue;
-            }
             SpriteIndex& spr = sprites[identifier];
 
             if (!isPng) {
@@ -121,6 +153,13 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
                         frameCountX = offByWidth;
                         frameCountY = offByHeight;
                     }
+                    if (spr.width == -1 || spr.height == -1) {
+                        spr.width = src.getSize().x;
+                        spr.height = src.getSize().y;
+                        std::cout << spr.width << "," << spr.height << "\n";
+                        frameCountX = 1;
+                        frameCountY = 1;
+                    }
                     if (j.contains("hitbox") && j["hitbox"].size() == 4) {
                         autoHitbox = false;
                         std::vector<float> hitbox = j["hitbox"];
@@ -137,6 +176,11 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
                 if (autoSize) {
                     spr.width = spr.height = size.y;
                     frameCountX = size.x / size.y;
+                    if (frameCountX == 0) {
+                        frameCountX = 1;
+                        spr.width = size.x;
+                        spr.height = size.y;
+                    }
                 }
                 if (autoHitbox) {
                     spr.hitbox.position = { 0, 0 };
@@ -167,7 +211,8 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         rs.setFillColor(MakeColor(color));
         rs.setTexture(&whiteTexture);
         rs.setTextureRect({ { 0, 0 }, { 1, 1 } });
-        Game::get().currentRenderer->draw(rs);
+        Game& game = Game::get();
+        game.currentRenderer->draw(rs, game.currentShader);
     };
 
     gfx["draw_circle"] = [&](float x, float y, float r, sol::table color) {
@@ -177,7 +222,8 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         cs.setFillColor(MakeColor(color));
         cs.setTexture(&whiteTexture);
         cs.setTextureRect({ { 0, 0 }, { 1, 1 } });
-        Game::get().currentRenderer->draw(cs);
+        Game& game = Game::get();
+        game.currentRenderer->draw(cs, game.currentShader);
     };
 
     gfx["draw_sprite"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y) {
