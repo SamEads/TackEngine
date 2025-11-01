@@ -122,15 +122,11 @@ public:
 		GameMakerResource::read(j, proj);
 		visible = j["visible"].get<bool>();
 		depth = j["depth"].get<int>();
-		gridX = j["gridX"].get<int>();
-		gridY = j["gridY"].get<int>();
 	}
 
 	virtual bool write(json& j, const std::filesystem::path& path, GMRoom* room) {
 		j["name"] = name;
 		j["depth"] = depth;
-		j["grid_x"] = gridX;
-		j["grid_y"] = gridY;
 		return true;
 	}
 };
@@ -528,8 +524,7 @@ public:
 		j["name"] = name;
 		j["room_settings"] = {
 			{ "width", settings.width },
-			{ "height", settings.height },
-			{ "persistent", settings.persistent },
+			{ "height", settings.height }
 		};
 		j["layers"] = json::array();
 		for (int i = 0; i < layers.size(); ++i) {
@@ -551,57 +546,18 @@ public:
 	std::string tileset;
 	int serializeWidth, serializeHeight;
 	const int nilValue = -2147483648;
+	bool compressed = false;
 	void decompressTiles(json& compData) {
+		compressed = true;
 		tileData.clear();
 		tileData.reserve(serializeWidth * serializeHeight);
 		auto v = compData.get<std::vector<int>>();
 		int size = v.size();
 
-
-		for (int i = 0; i < size;) {
-			int value = v[i++];
-			if (value == nilValue) { // nil tile
-				value = 0;
-			}
-
-			// Start a value train
-			if (value >= 0) {
-				while (true) {
-					// stay in bounds
-					if (i >= size) {
-						break;
-					}
-
-					int nextValue = v[i++];
-					if (nextValue == nilValue) { // nil tile
-						nextValue = 0;
-					}
-
-					if (nextValue >= 0) {
-						tileData.push_back(nextValue);
-					}
-					else {
-						value = nextValue;
-						break;
-					}
-				}
-			}
-
-			// Negative value is count
-			if (value < 0) {
-				// stay in bounds
-				if (i >= size) {
-					break;
-				}
-
-				int repeatValue = v[i++];
-				if (repeatValue == nilValue) { // nil tile
-					repeatValue = 0;
-				}
-
-				for (int i = 0; i < -value; ++i) {
-					tileData.push_back(repeatValue);
-				}
+		tileData = v;
+		for (int i = 0; i < size; i++) {
+			if (tileData[i] == nilValue) { // nil tile
+				tileData[i] = 0;
 			}
 		}
 	}
@@ -633,10 +589,11 @@ public:
 	}
 	bool write(json& j, const std::filesystem::path& path, GMRoom* room) override {
 		GMRLayer::write(j, path, room);
-		j["layer_type"] = "tiles";
+		j["type"] = "tiles";
 		j["width"] = serializeWidth;
 		j["height"] = serializeHeight;
 		j["visible"] = visible;
+		j["compressed"] = compressed;
 		if (tileset.empty()) {
 			j["tileset"] = nullptr;
 		}
@@ -707,13 +664,14 @@ public:
 			return false;
 		}
 		GMRLayer::write(j, path, room);
-		j["layer_type"] = "instances";
-		j["instances"] = json::array();
+		j["type"] = "objects";
+		j["objects"] = json::array();
+		auto& instanceArr = j["objects"];
 		for (auto& i : instances) {
 			json o = json::object();
-			o["object_index"] = i->object;
+			o["object"] = i->object;
 			if (i->rotation != 0) {
-				o["rotation"] = i->rotation;
+				o["angle"] = i->rotation;
 			}
 			if (i->scaleX != 1) {
 				o["scale_x"] = i->scaleX;
@@ -723,12 +681,19 @@ public:
 			}
 			o["x"] = i->x;
 			o["y"] = i->y;
-			o["image_index"] = i->imageIndex;
-			o["image_speed"] = i->imageSpeed;
-			o["properties"] = i->properties;
+			if (i->imageIndex != 0) {
+				o["image_index"] = i->imageIndex;
+			}
+			if (i->imageSpeed != 1) {
+				o["image_speed"] = i->imageSpeed;
+			}
+			if (!i->properties.empty()) {
+				o["properties"] = i->properties;
+			}
 			o["color"] = { i->color.value[0], i->color.value[1], i->color.value[2], i->color.value[3] };
-			j["instances"].push_back(o);
+			instanceArr.push_back(o);
 
+			/*
 			if (i->hasCreationCode) {
 				std::filesystem::path cc = room->directory / std::string("InstanceCreationCode_" + i->uuid + ".gml");
 
@@ -753,6 +718,7 @@ public:
 					o << l << std::endl;
 				}
 			}
+			*/
 		}
 		return true;
 	}
@@ -788,7 +754,7 @@ public:
 
 	bool write(json& j, const std::filesystem::path& path, GMRoom* room) override {
 		GMRLayer::write(j, path, room);
-		j["layer_type"] = "background";
+		j["type"] = "background";
 		j["tiled_x"] = tiledX;
 		j["tiled_y"] = tiledY;
 		j["speed_x"] = speedX;
@@ -838,7 +804,7 @@ void GameMakerProject::parsePath(const std::filesystem::path& p) {
 }
 
 void GameMakerProject::parse() {
-	AddMessage("Starting GMConvert update...");
+	AddMessage("Starting asset update...");
 
 	auto start = std::chrono::high_resolution_clock::now();
 

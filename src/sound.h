@@ -37,10 +37,12 @@ public:
 
 class SoundManager {
 public:
-	std::thread loadThread;
+	std::thread thread;
 	std::mutex mutex;
 	std::unordered_map<std::string, SoundBuffer> buffers;
+	std::vector<std::unique_ptr<sf::Sound>> unloading;
 	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+	void update();
     static SoundManager& get() {
         static SoundManager sndMgr;
         return sndMgr;

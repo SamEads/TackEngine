@@ -42,6 +42,7 @@ public:
     int width, height;
     float cameraX = 0, cameraY = 0;
     float cameraPrevX = 0, cameraPrevY = 0;
+    float renderCameraX = 0, renderCameraY = 0;
     float cameraWidth = 0, cameraHeight = 0;
 
     Room(sol::state& lua, const RoomReference& room);
@@ -51,6 +52,8 @@ public:
     void update();
 
     void draw(float alpha);
+
+    void setView(float cx, float cy);
 
     float getCameraX() {
         return cameraX;
@@ -363,7 +366,7 @@ public:
 
         auto it = ptr->kvp.find("create");
         if (it != ptr->kvp.end()) {
-            auto res = it->second.as<sol::safe_function>()(ptr, this);
+            auto res = it->second.as<sol::safe_function>()(ptr->MyReference, this);
             if (!res.valid()) {
                 sol::error e = res;
                 std::cout << e.what() << "\n";

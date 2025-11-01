@@ -82,7 +82,7 @@ int main() {
     };
 
     SoundManager& sndMgr = SoundManager::get();
-    // sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
+    sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
     Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
     auto& window = Game::get().window;
 
@@ -118,7 +118,7 @@ int main() {
             if (Keys::get().pressed(sf::Keyboard::Scancode::F5)) {
                 const sf::Texture& t = Game::get().consoleRenderer.get()->getTexture();
                 sf::Image i = t.copyToImage();
-                i.saveToFile("_.png");
+                bool saved = i.saveToFile("_.png");
             }
         }
 
@@ -126,7 +126,6 @@ int main() {
         Game::get().consoleRenderer->clear();
         if (game.room) {
             float alpha = t.getAlpha();
-            alpha = 1; // dbg
             game.room->draw(alpha);
         }
         Game::get().consoleRenderer->display();
@@ -175,8 +174,27 @@ int main() {
             }
         }
 
-        window->draw(renderSprite);
-        window->display();
+        auto it = ShaderManager::get().shaders.find("shd_palette");
+        if (it != ShaderManager::get().shaders.end()) {
+            Shader& shader = it->second;
+            auto& palSpr = SpriteManager::get().sprites["spr_pal_all"];
+            
+            auto uvs = palSpr.getUVs();
+            auto texels = palSpr.getTexelSize();
+
+            shader.baseShader.setUniform("u_pal",                           palSpr.texture);
+            shader.baseShader.setUniform("u_pal_uvs", sf::Glsl::Vec4(std::get<0>(uvs), std::get<1>(uvs), std::get<2>(uvs), std::get<3>(uvs)));
+            shader.baseShader.setUniform("u_pal_texel_size", sf::Glsl::Vec2(std::get<0>(texels), std::get<1>(texels)));
+            static float d = 0;
+            if (Keys::get().pressed(sf::Keyboard::Scancode::D)) {
+                d = (d == 1) ? 0 : 1;
+            }
+            shader.baseShader.setUniform("u_pal_index", 2.0f);
+
+            window->draw(renderSprite, &shader.baseShader);
+
+            window->display();
+        }
 
         float delta = clock.restart().asSeconds();
         Game::get().fps = 1.f / delta;

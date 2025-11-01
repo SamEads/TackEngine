@@ -52,6 +52,10 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
         "collision_rectangle", &Room::collisionRectangleScript,
         "collision_rectangle_list", &Room::collisionRectangleList,
 
+        "render_x", &Room::renderCameraX,
+        "render_y", &Room::renderCameraY,
+        "set_render_position", &Room::setView,
+
         sol::meta_function::index,      &Room::getKVP,
         sol::meta_function::new_index,  &Room::setKVP
     );
@@ -90,21 +94,21 @@ void Room::load() {
     cameraHeight = 224;
 
     for (auto& l : j["layers"]) {
-        std::string type = l["layer_type"].get<std::string>();
+        std::string type = l["type"].get<std::string>();
         int depth = l["depth"];
 
-        if (type == "instances") {
-            for (auto& i : l["instances"]) {
-                std::string objectIndex = i["object_index"];
+        if (type == "objects") {
+            for (auto& i : l["objects"]) {
+                std::string objectIndex = i["object"];
                 float x = i["x"];
                 float y = i["y"];
                 BaseObject* base = objMgr.baseClasses[objectIndex].object.as<BaseObject*>();
                 auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<BaseObject*>());
-                obj->xScale = i.value("scale_x", 1);
-                obj->yScale = i.value("scale_y", 1);
-                obj->imageAngle = i.value("rotation", 0);
-                obj->imageIndex = i["image_index"];
-                obj->imageSpeedMod = i["image_speed"];
+                obj->xScale = i.value("scale_x", 1.0f);
+                obj->yScale = i.value("scale_y", 1.0f);
+                obj->imageAngle = i.value("angle", 0.0f);
+                obj->imageIndex = i.value("image_index", 0.0f);
+                obj->imageSpeedMod = i.value("image_speed", 1.0f);
                 if (i["properties"].size() > 0) {
                     bool hadProperties = false;
                     if (obj->kvp.find("properties") == obj->kvp.end()) {
@@ -153,7 +157,52 @@ void Room::load() {
             map->tileCountY = l["height"];
             map->visible = l["visible"];
             map->name = l["name"];
-            map->tileData = l["tiles"].get<std::vector<unsigned int>>();
+            if (!l["compressed"]) {
+                map->tileData = l["tiles"].get<std::vector<unsigned int>>();
+            }
+            else {
+                auto compressed = l["tiles"].get<std::vector<int>>();
+                auto& decompressed = map->tileData;
+		        decompressed.reserve(map->tileCountX * map->tileCountY);
+                int size = compressed.size();
+                for (int i = 0; i < size;) {
+                    int value = compressed[i++];
+
+                    // start a value train
+                    if (value >= 0) {
+                        while (true) {
+                            // stay in bounds
+                            if (i >= size) {
+                                break;
+                            }
+
+                            int nextValue = compressed[i++];
+
+                            if (nextValue >= 0) {
+                                decompressed.push_back(nextValue);
+                            }
+                            else {
+                                value = nextValue;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Negative value is count
+                    if (value < 0) {
+                        // stay in bounds
+                        if (i >= size) {
+                            break;
+                        }
+
+                        int repeatValue = compressed[i++];
+
+                        for (int i = 0; i < -value; ++i) {
+                            decompressed.push_back(repeatValue);
+                        }
+                    }
+                }
+            }
             int pos = 0;
             map->tileset = &TilesetManager::get().tilesets[l["tileset"].get<std::string>()];
             tilemaps.push_back(std::move(map));
@@ -233,10 +282,7 @@ void Room::update() {
     // Step
     Game::get().profiler.start("step");
     for (auto& instance : instances) {
-        Game::get().profiler.start(std::to_string(instance->id));
         instance->runScript("step", this);
-        Game::get().profiler.finish(std::to_string(instance->id));
-        // double t = Game::get().profiler.getMS(std::to_string(instance->id));
     }
     addQueue();
     Game::get().profiler.finish("step");
@@ -250,17 +296,23 @@ void Room::update() {
     Game::get().profiler.finish("endstep");
 }
 
-void Room::draw(float alpha) {
+void Room::setView(float cx, float cy) {
     auto target = Game::get().currentRenderer;
 
     sf::Vector2u gameSize = target->getSize();
     sf::View view({ { 0, 0 }, { cameraWidth, cameraHeight } });
-    float cw = cameraWidth;
-    float ch = cameraHeight;
-    float cx = lerp(cameraPrevX, cameraX, alpha);
-    float cy = lerp(cameraPrevY, cameraY, alpha);
-    view.setCenter({ cx + cw / 2.0f, cy + ch / 2.0f });
+
+    view.setCenter({ cx + cameraWidth / 2.0f, cy + cameraHeight / 2.0f });
     target->setView(view);
+
+    renderCameraX = cx;
+    renderCameraY = cy;
+}
+
+
+void Room::draw(float alpha) {
+    auto target = Game::get().currentRenderer;
+    setView(lerp(cameraPrevX, cameraX, alpha), lerp(cameraPrevY, cameraY, alpha));
     
     std::vector<Drawable*> drawables;
     int count = 0;
@@ -313,13 +365,15 @@ void Room::draw(float alpha) {
         d->endDraw(this, alpha);
     }
 
+    /*
     sf::RectangleShape rs;
-    rs.setPosition({ cx, cy });
-    rs.setSize({ cw, ch });
+    rs.setPosition({ renderCameraX, renderCameraY });
+    rs.setSize({ cameraWidth, cameraHeight });
     rs.setOutlineColor({ 255, 0, 0, 255 });
     rs.setOutlineThickness(1);
     rs.setFillColor({ 0, 0, 0, 0 });
     target->draw(rs);
+    */
 
     target->setView(target->getDefaultView());
 
@@ -360,8 +414,8 @@ std::vector<Object::Reference> Room::objectGetList(BaseObject* baseType) {
 }
 
 void Background::draw(Room* room, float alpha) {
-    float cx = lerp(room->cameraPrevX, room->cameraX, alpha);
-    float cy = lerp(room->cameraPrevY, room->cameraY, alpha);
+    float cx = room->renderCameraX;
+    float cy = room->renderCameraY;
 
     float x = cx - 1;
     float y = cy - 1;
@@ -372,20 +426,20 @@ void Background::draw(Room* room, float alpha) {
         spr->setOrigin({ 0, 0 });
         spr->setColor(color);
         spr->setRotation(sf::degrees(0));
-        spr->setColor({ 255, 255, 255, 255 });
         spr->setColor(sf::Color::White);
-        float parallax = 0.0f;
-        float parallaxY = 0.0f;
-        float x = (room->cameraX * parallax) + this->x;
-        float timesOver = floorf((room->cameraX * (1.0f - parallax)) / spriteIndex->width);
+        float parallax = speedX;
+        float parallaxY = speedY;
+        float x = (cx * parallax) + this->x;
+        float timesOver = floorf((cx * (1.0f - parallax)) / spriteIndex->width);
         x += (spriteIndex->width) * timesOver;
 
-        float y = (room->cameraY * parallaxY) + this->y;
-        timesOver = floorf((room->cameraY * (1.0f - parallaxY)) / spriteIndex->height);
+        float y = (cy * parallaxY) + this->y;
+        timesOver = floorf((cy * (1.0f - parallaxY)) / spriteIndex->height);
         y += (spriteIndex->height) * timesOver;
 
         for (int i = -1; i <= 1; ++i) {
             for (int j = -1; j <= 1; ++j) {
+                if (!tiledY && j != 0) continue;
                 spr->setPosition({ floorf(x) + (i * spriteIndex->width), floorf(y) + (j * spriteIndex->height) });
                 Game::get().currentRenderer->draw(*spr);
             }

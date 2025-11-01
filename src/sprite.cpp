@@ -63,7 +63,7 @@ void SpriteIndex::draw(sf::RenderTarget &target, sf::Vector2f position, float fr
     sprite->setOrigin({ static_cast<float>(originX), static_cast<float>(originY) });
     sprite->setScale(scale);
     sprite->setColor(color);
-    sprite->setRotation(sf::degrees(rotation));
+    sprite->setRotation(sf::degrees(-rotation));
 
     const sf::Sprite& r = *(sprite.get());
     target.draw(r, Game::get().currentShader);
@@ -95,7 +95,6 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         for (auto& it : std::filesystem::directory_iterator(path)) {
             std::string identifier = it.path().filename().replace_extension("").string();
             if (sprites.find(identifier) != sprites.end()) {
-                std::cout << identifier << "\n";
                 continue;
             }
             if (!it.is_directory() && it.path().extension() != ".png") {
@@ -156,7 +155,6 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
                     if (spr.width == -1 || spr.height == -1) {
                         spr.width = src.getSize().x;
                         spr.height = src.getSize().y;
-                        std::cout << spr.width << "," << spr.height << "\n";
                         frameCountX = 1;
                         frameCountY = 1;
                     }
@@ -167,7 +165,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
                         spr.hitbox.size.x = hitbox[2] - hitbox[0] + 1.0f;
                         spr.hitbox.size.y = hitbox[3] - hitbox[1] + 1.0f;
                     }
-                    if (j.contains("origin") && j["orig in"].size() == 2) {
+                    if (j.contains("origin") && j["origin"].size() == 2) {
                         spr.originX = j["origin"][0].get<int>();
                         spr.originY = j["origin"][1].get<int>();
                     }

@@ -6,20 +6,23 @@
 using namespace nlohmann;
 
 void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
-    for (auto& it : std::filesystem::directory_iterator(assets / "sounds")) {
-        if (!it.is_regular_file()) continue;
+	auto paths = { assets / "sounds", assets / "music" };
+	for (auto& p : paths) {
+		for (auto& it : std::filesystem::directory_iterator(p)) {
+			if (!it.is_regular_file()) continue;
 
-        std::string soundName = it.path().filename().replace_extension("").string();
-		if (lua[soundName] != sol::lua_nil) continue; // already contains sound
+			std::string soundName = it.path().filename().replace_extension("").string();
+			if (lua[soundName] != sol::lua_nil) continue; // already contains sound
 
-        std::filesystem::path soundFile = it.path();
+			std::filesystem::path soundFile = it.path();
 
-		SoundAsset asset;
-		asset.name = soundName;
-		asset.path = soundFile;
-		asset.volume = 1.0f;
+			SoundAsset asset;
+			asset.name = soundName;
+			asset.path = soundFile;
+			asset.volume = 1.0f;
 
-        lua[soundName] = asset;
+			lua[soundName] = asset;
+		}
 	}
 
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "sounds")) {
@@ -144,7 +147,9 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 			auto& asset = sound.as<SoundAsset>();
 			auto& bufs = buffers[asset.name];
 			for (auto& [k, i] : bufs.instances) {
-				i->sound->stop();
+				i->sound->setVolume(i->sound->getVolume() * 0.05f);
+				std::lock_guard<std::mutex> lock(mutex);
+				unloading.emplace_back(std::move(i->sound));
 			}
 			bufs.instances.clear();
 		}
@@ -152,10 +157,34 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 			auto& ref = sound.as<SoundInstanceReference>();
 			auto it = ref.buffer->instances.find(ref.id);
 			if (it != ref.buffer->instances.end()) {
-				it->second->sound->stop();
+				it->second->sound->setVolume(it->second->sound->getVolume() * 0.05f);
+				std::lock_guard<std::mutex> lock(mutex);
+				unloading.emplace_back(std::move(it->second->sound));
 			}
+			ref.buffer->instances.erase(it);
 		}
     };
+}
+
+void SoundManager::update() {
+	while (true) {
+		int count = 0;
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			count = unloading.size();
+		}
+		
+		if (count > 0) {
+			for (auto it = unloading.begin(); it != unloading.end(); it++) {
+				std::lock_guard<std::mutex> lock(mutex);
+				auto& snd = *it;
+				snd->stop();
+			}
+			unloading.clear();
+		}
+
+		std::this_thread::sleep_for(std::chrono::nanoseconds(10));
+	}
 }
 
 void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
