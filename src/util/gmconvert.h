@@ -849,7 +849,7 @@ void GameMakerProject::parse() {
 	for (auto& [k, v] : managed) {
 		j[k] = v;
 	}
-	std::ofstream managedObjects(assetsPath / "managed.json");
+	std::ofstream managedObjects(assetsPath / "assets.json");
 	managedObjects << std::setw(4) << j;
 
 	auto end = std::chrono::high_resolution_clock::now();

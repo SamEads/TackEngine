@@ -1,10 +1,10 @@
 #pragma once
 
 #include <iostream>
-#include <unordered_map>
-#include <SFML/Graphics.hpp>
-#include <sol/sol.hpp>
 #include <deque>
+#include <unordered_map>
+#include <sol/sol.hpp>
+#include "graphics.h"
 #include "vendor/json.hpp"
 #include "sprite.h"
 #include "util/mathhelper.h"
@@ -17,10 +17,10 @@ class Room;
 
 class Object : public Drawable {
 public:
-    ObjectId id;
     struct Reference {
         ObjectId id;
-        sol::object object;
+        sol::table table;
+        Object* object;
     };
     Reference MyReference;
 
@@ -28,7 +28,6 @@ public:
     bool runScript(const std::string& script, Args... args) {
         auto step = kvp.find(script);
         if (step != kvp.end()) {
-            currentFunction = step->first;
             auto res = step->second.as<sol::safe_function>()(MyReference, args...);
             if (!res.valid()) {
                 sol::error e = res;
@@ -42,8 +41,9 @@ public:
     }
 
     sol::state& lua;
+    std::optional<sol::function> drawFunc;
+    std::optional<sol::function> stepFunc;
     std::unordered_map<std::string, sol::object> kvp;
-    std::string currentFunction;
 
     float x = 0.0f, y = 0.0f;
     float xspd = 0.0f, yspd = 0.0f;
@@ -54,6 +54,8 @@ public:
     float imageSpeedMod = 1.0f;
     float imageAngle = 0.0f;
     bool incrementImageSpeed = true;
+
+    bool active = true;
 
     SpriteIndex* spriteIndex = nullptr;
     SpriteIndex* maskIndex = nullptr;
@@ -119,27 +121,18 @@ public:
         return rect;
     }
 
-    std::vector<sf::Vector2f> getPoints() const;
+    std::vector<Vector2f> getPoints() const;
 
-    void setDyn(const std::string& key, sol::main_object obj) {
-        auto it = kvp.find(key);
-        if (it == kvp.end()) {
-            kvp.insert({ key, sol::object(std::move(obj)) });
-        }
-        else {
-            it->second = sol::object(std::move(obj));
-        }
-    }
+    void setDyn(const std::string& key, sol::main_object obj);
 
-    sol::object getDyn(const std::string& ref) {
-        auto it = kvp.find(ref);
-        if (it == kvp.end()) {
-            return sol::lua_nil;
-        }
-        return it->second;
-    }
+    sol::object getDyn(const std::string& ref);
 
     void trySet(sol::object v) {}
+
+    void forcePosition(float x, float y) {
+        this->xPrev = this->x = x;
+        this->yPrev = this->y = y;
+    }
 
     const bool extends(BaseObject* o) const;
 
@@ -202,7 +195,7 @@ private:
 public:
     class ScriptedInfo {
     public:
-        sol::object object;
+        std::unique_ptr<BaseObject>* objectPtr;
         std::function<std::unique_ptr<Object>(BaseObject*)> create;
     };
     std::unordered_map<std::string, ScriptedInfo> baseClasses;

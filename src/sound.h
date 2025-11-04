@@ -2,10 +2,10 @@
 
 #include <string>
 #include <unordered_map>
-#include <SFML/Audio.hpp>
 #include <thread>
 #include <mutex>
 #include <sol/sol.hpp>
+#include <SFML/Audio.hpp>
 
 class SoundAsset {
 public:

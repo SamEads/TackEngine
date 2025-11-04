@@ -21,6 +21,11 @@ void Game::initializeLua(sol::state &state, const std::filesystem::path& assets)
     );
     
     lua["game"] = this;
+
+    lua["game"]["set_tick_speed"] = [&](Game* self, double tickSpeed) {
+        self->timer.setTickRate(tickSpeed);
+    };
+    
     lua["game"]["set_caption"] = [&](Game* self, const std::string& caption) {
         self->window->setTitle(caption);
     };

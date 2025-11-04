@@ -4,6 +4,16 @@
 #include "room.h"
 #include "game.h"
 
+void Tilemap::initializeLua(sol::state &lua) {
+    lua.new_usertype<Tilemap>(
+        "Tilemap", sol::no_constructor,
+        "visible", &Tilemap::visible,
+        "set", &Tilemap::set,
+        "get", &Tilemap::get,
+        "depth", &Tilemap::depth
+    );
+}
+
 void Tilemap::draw(Room* room, float alpha) {
     int tileWidth = tileset->tileWidth;
     int tileHeight = tileset->tileHeight;
@@ -82,4 +92,12 @@ void Tilemap::draw(Room* room, float alpha) {
             }
         }
     }
+}
+
+int Tilemap::get(int x, int y) {
+    return 0;
+}
+
+void Tilemap::set(int x, int y, int value) {
+
 }

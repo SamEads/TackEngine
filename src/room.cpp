@@ -6,12 +6,9 @@
 
 using namespace nlohmann;
 
+sol::function drawAll;
 void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
-    lua.new_usertype<Tilemap>(
-        "Tilemap", sol::no_constructor,
-        "visible", &Tilemap::visible,
-        "depth", &Tilemap::depth
-    );
+    Tilemap::initializeLua(lua);
 
     lua.new_usertype<Background>(
         "Background", sol::no_constructor,
@@ -24,14 +21,14 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
         "Room", sol::no_constructor,
 
         // Room info
-        "width", sol::readonly(&Room::width),
-        "height", sol::readonly(&Room::height),
+        "width",    sol::readonly(&Room::width),
+        "height",   sol::readonly(&Room::height),
         "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
         "camera_xprevious", sol::readonly(&Room::cameraPrevX),
         "camera_yprevious", sol::readonly(&Room::cameraPrevY),
-        "camera_y", sol::property(&Room::getCameraY, &Room::setCameraY),
-        "camera_width", sol::readonly(&Room::cameraWidth),
-        "camera_height", sol::readonly(&Room::cameraHeight),
+        "camera_y",     sol::property(&Room::getCameraY, &Room::setCameraY),
+        "camera_width",     sol::readonly(&Room::cameraWidth),
+        "camera_height",    sol::readonly(&Room::cameraHeight),
 
         // Objects & instances
         "instance_create", &Room::instanceCreateScript,
@@ -42,14 +39,17 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
         "object_exists", &Room::objectExists,
         "object_get_list", &Room::objectGetList,
         "object_destroy", &Room::objectDestroy,
+        "object_deactivate", &Room::deactivateObject,
+        "object_activate", &Room::activateObject,
+        "object_activate_region", &Room::activateObjectRegion,
 
         // Layers
-        "tile_layer_get", &Room::getTileLayer,
+        "tile_layer_get",       &Room::getTileLayer,
         "background_layer_get", &Room::getBackgroundLayer,
 
         // Collisions
-        "instance_place", &Room::instancePlaceScript,
-        "collision_rectangle", &Room::collisionRectangleScript,
+        "instance_place",           &Room::instancePlaceScript,
+        "collision_rectangle",      &Room::collisionRectangleScript,
         "collision_rectangle_list", &Room::collisionRectangleList,
 
         "render_x", &Room::renderCameraX,
@@ -74,6 +74,16 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
 
         lua[identifier] = ref;
     }
+
+    drawAll = lua.script(R"(
+return function(drawables, room, alpha)
+    local n = #drawables
+    for i = 1, n do
+        local d = drawables[i]
+        if d.draw then d:draw(room, alpha) end
+    end
+end
+    )");
 }
 
 Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
@@ -102,8 +112,8 @@ void Room::load() {
                 std::string objectIndex = i["object"];
                 float x = i["x"];
                 float y = i["y"];
-                BaseObject* base = objMgr.baseClasses[objectIndex].object.as<BaseObject*>();
-                auto obj = instanceCreate(x, y, depth, objMgr.baseClasses[objectIndex].object.as<BaseObject*>());
+                BaseObject* base = objMgr.baseClasses[objectIndex].objectPtr->get();
+                auto obj = instanceCreate(x, y, depth, base);
                 obj->xScale = i.value("scale_x", 1.0f);
                 obj->yScale = i.value("scale_y", 1.0f);
                 obj->imageAngle = i.value("angle", 0.0f);
@@ -133,30 +143,47 @@ void Room::load() {
         }
 
         if (type == "background") {
-            std::unique_ptr<Background> bg = std::make_unique<Background>();
-            bg->tiledX = l["tiled_x"], bg->tiledY = l["tiled_y"];
-            bg->speedX = l["speed_x"], bg->speedY = l["speed_y"];
-            bg->x = l["x"], bg->y = l["y"];
+            std::unique_ptr<Background> bg = std::make_unique<Background>(lua);
+
+            bg->name = l["name"];
+            
+            bg->tiledX = l["tiled_x"];
+            bg->tiledY = l["tiled_y"];
+
+            bg->xspd = l["speed_x"];
+            bg->yspd = l["speed_y"];
+            
+            bg->x = l["x"];
+            bg->y = l["y"];
+
             bg->visible = l["visible"];
             bg->depth = depth;
-            bg->name = l["name"];
+            
             if (!l["sprite"].is_null()) {
                 bg->spriteIndex = &SpriteManager::get().sprites[l["sprite"]];
             }
-            auto& col = l["color"];
+            
+            auto& col = l["color"].get<std::vector<uint8_t>>();
             if (col.size() == 4) {
-                bg->color = { col[0].get<uint8_t>(), col[1].get<uint8_t>(), col[2].get<uint8_t>(), col[3].get<uint8_t>() };
+                bg->color = *((c_Color*)col.data());
             }
-            backgrounds.push_back(std::move(bg));
+            
+            bg->MyReference.id = currentId++;
+            backgrounds.push_back(bg.get());
+            instances.push_back(std::move(bg));
         }
 
         if (type == "tiles") {
-            std::unique_ptr<Tilemap> map = std::make_unique<Tilemap>();
-            map->depth = depth;
+            std::unique_ptr<Tilemap> map = std::make_unique<Tilemap>(lua);
+            
+            map->name = l["name"];
+
             map->tileCountX = l["width"];
             map->tileCountY = l["height"];
+
             map->visible = l["visible"];
-            map->name = l["name"];
+            map->depth = depth;
+
             if (!l["compressed"]) {
                 map->tileData = l["tiles"].get<std::vector<unsigned int>>();
             }
@@ -203,9 +230,12 @@ void Room::load() {
                     }
                 }
             }
-            int pos = 0;
+            
             map->tileset = &TilesetManager::get().tilesets[l["tileset"].get<std::string>()];
-            tilemaps.push_back(std::move(map));
+
+            map->MyReference.id = currentId++;
+            tilemaps.push_back(map.get());
+            instances.push_back(std::move(map));
         }
     }
 
@@ -224,12 +254,12 @@ void Room::createAndRoomStartEvents() {
     if (create != kvp.end()) {
         create->second.as<sol::safe_function>()(this);
     }
-    addQueue();
+    updateQueue();
 
     for (auto& objUnique : instances) {
         objUnique->runScript("create", this);
     }
-    addQueue();
+    updateQueue();
 
     // Room creation code specific to this room
     lua["room"] = this;
@@ -242,15 +272,15 @@ void Room::createAndRoomStartEvents() {
         }
     }
     lua["room"] = nullptr;
-    addQueue();
+    updateQueue();
 
     auto start = kvp.find("room_start");
     if (start != kvp.end()) {
         start->second.as<sol::safe_function>()(this);
-        addQueue();
+        updateQueue();
     }
 
-    addQueue();
+    updateQueue();
     for (auto& objUnique : instances) {
         objUnique->runScript("room_start", this);
     }
@@ -264,36 +294,38 @@ void Room::update() {
     cameraPrevY = cameraY;
 
     for (auto& i : instances) {
-        i->xPrev = i->x;
-        i->yPrev = i->y;
-        if (i->incrementImageSpeed) {
-            i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
+        if (i->active) {
+            i->xPrev = i->x;
+            i->yPrev = i->y;
+            if (i->incrementImageSpeed) {
+                i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
+            }
         }
     }
 
     // Begin Step
-    Game::get().profiler.start("beginstep");
     for (auto& instance : instances) {
-        instance->runScript("begin_step", this);
+        if (instance->active) {
+            instance->runScript("begin_step", this);
+        }
     }
-    addQueue();
-    Game::get().profiler.finish("beginstep");
+    updateQueue();
 
     // Step
-    Game::get().profiler.start("step");
     for (auto& instance : instances) {
-        instance->runScript("step", this);
+        if (instance->active && instance->stepFunc.has_value()) {
+            instance->stepFunc.value()(instance->MyReference, this);
+        }
     }
-    addQueue();
-    Game::get().profiler.finish("step");
+    updateQueue();
 
     // End Step
-    Game::get().profiler.start("endstep");
     for (auto& instance : instances) {
-        instance->runScript("end_step", this);
+        if (instance->active) {
+            instance->runScript("end_step", this);
+        }
     }
-    addQueue();
-    Game::get().profiler.finish("endstep");
+    updateQueue();
 }
 
 void Room::setView(float cx, float cy) {
@@ -314,37 +346,15 @@ void Room::draw(float alpha) {
     auto target = Game::get().currentRenderer;
     setView(lerp(cameraPrevX, cameraX, alpha), lerp(cameraPrevY, cameraY, alpha));
     
-    std::vector<Drawable*> drawables;
+    drawables.clear();
     int count = 0;
-    for (auto& bg : backgrounds) {
-        if (bg->visible) {
-            count++;
-        }
-    }
-    for (auto& tm : tilemaps) {
-        if (tm->visible) {
+    for (auto& i : instances) {
+        if (i->visible && i->active && dynamic_cast<Tilemap*>(i.get())) {
             count++;
         }
     }
     for (auto& i : instances) {
-        if (i->visible) {
-            count++;
-        }
-    }
-    drawables.reserve(count);
-
-    for (auto& bg : backgrounds) {
-        if (bg->visible) {
-            drawables.push_back(bg.get());
-        }
-    }
-    for (auto& tm : tilemaps) {
-        if (tm->visible) {
-            drawables.push_back(tm.get());
-        }
-    }
-    for (auto& i : instances) {
-        if (i->visible) {
+        if (i->visible && i->active) {
             drawables.push_back(i.get());
         }
     }
@@ -358,22 +368,17 @@ void Room::draw(float alpha) {
     }
 
     for (auto& d : drawables) {
-        d->draw(this, alpha);
+        if (d->drawFunc.has_value()) {
+            d->drawFunc.value()(d->MyReference, this, alpha);
+        }
+        else {
+            d->draw(this, alpha);
+        }
     }
-
+    
     for (auto& d : drawables) {
         d->endDraw(this, alpha);
     }
-
-    /*
-    sf::RectangleShape rs;
-    rs.setPosition({ renderCameraX, renderCameraY });
-    rs.setSize({ cameraWidth, cameraHeight });
-    rs.setOutlineColor({ 255, 0, 0, 255 });
-    rs.setOutlineThickness(1);
-    rs.setFillColor({ 0, 0, 0, 0 });
-    target->draw(rs);
-    */
 
     target->setView(target->getDefaultView());
 
@@ -384,22 +389,57 @@ void Room::draw(float alpha) {
 }
 
 void Room::setCameraX(float val) {
-    cameraX = val;
-    if (cameraX < 0) {
-        cameraX = 0;
-    }
-    if (cameraX > width - cameraWidth) {
-        cameraX = width - cameraWidth;
-    }
+    cameraX = std::clamp(val, 0.0f, width - cameraWidth);
 }
 
 void Room::setCameraY(float val) {
-    cameraY = val;
-    if (cameraY < 0) {
-        cameraY = 0;
+    cameraY = std::clamp(val, 0.0f, height - cameraHeight);
+}
+
+void Room::deactivateObject(sol::object object) {
+    if (object.is<BaseObject*>()) {
+        BaseObject* o = object.as<BaseObject*>();
+        for (auto& i : ids) {
+            if (i.second->extends(o))
+                i.second->active = false;
+        }
     }
-    if (cameraY > height - cameraHeight) {
-        cameraY = height - cameraHeight;
+    else {
+        auto& ref = object.as<Object::Reference>();
+        auto it = ids.find(ref.id);
+        if (it != ids.end()) {
+            it->second->active = false;
+        }
+    }
+}
+
+void Room::activateObject(sol::object object) {
+    if (object.is<BaseObject*>()) {
+        BaseObject* o = object.as<BaseObject*>();
+        for (auto& i : ids) {
+            if (i.second->extends(o))
+                i.second->active = true;
+        }
+    }
+    else {
+        auto& ref = object.as<Object::Reference>();
+        auto it = ids.find(ref.id);
+        if (it != ids.end()) {
+            it->second->active = true;
+        }
+    }
+}
+
+void Room::activateObjectRegion(sol::object object, float x1, float y1, float x2, float y2) {
+    BaseObject* o = object.as<BaseObject*>();
+    sf::FloatRect regionRect = { { x1, y1 }, { x2 - x1, y2 - y1 } };
+    for (auto& i : ids) {
+        if (!i.second->active && i.second->extends(o)) {
+            auto objectRect = i.second->getRectangle();
+            if (regionRect.findIntersection(objectRect).has_value()) {
+                i.second->active = true;
+            }
+        }
     }
 }
 
@@ -426,9 +466,9 @@ void Background::draw(Room* room, float alpha) {
         spr->setOrigin({ 0, 0 });
         spr->setColor(color);
         spr->setRotation(sf::degrees(0));
-        spr->setColor(sf::Color::White);
-        float parallax = speedX;
-        float parallaxY = speedY;
+        spr->setColor(c_Color::White);
+        float parallax = xspd;
+        float parallaxY = yspd;
         float x = (cx * parallax) + this->x;
         float timesOver = floorf((cx * (1.0f - parallax)) / spriteIndex->width);
         x += (spriteIndex->width) * timesOver;

@@ -5,7 +5,6 @@ extern "C" {
 #endif
 #include <fstream>
 #include "vendor/json.hpp"
-#include "util/timer.h"
 #include "sprite.h"
 #include "object.h"
 #include "tileset.h"
@@ -26,21 +25,26 @@ using namespace nlohmann;
 void InitializeLuaEnvironment(sol::state& lua) {
     std::filesystem::path assets = Game::get().assetsFolder;
 
-    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::package, sol::lib::math, sol::lib::table, sol::lib::jit);
+#ifdef USE_LUA_JIT
+    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::package, sol::lib::math, sol::lib::table, sol::lib::jit, sol::lib::ffi);
+#else
+    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::package, sol::lib::math, sol::lib::table);
+#endif
+
     std::filesystem::path scriptsPath = (std::filesystem::path(assets.string()) / "scripts" / "?.lua");
     lua["package"]["path"] = scriptsPath.string();
 
     // Initialize math library extension
     sol::table math = lua["math"];
-    math["point_distance"] = PointDistance;
+    math["round"] = std::roundf;
     math["sign"] = signum;
     math["lerp"] = lerp;
-    math["round"] = std::roundf;
+    math["floor"] = std::floorf;
+    math["ceil"] = std::ceilf;
+    math["point_distance"] = PointDistance;
     math["clamp"] = [](float v, float min, float max) {
         return std::max(min, std::min(v, max));
     };
-    math["floor"] = std::floorf;
-    math["ceil"] = std::ceilf;
     math["intersects"] = [](sol::table a, sol::table b) {
         sf::FloatRect ra = { { a.get<float>(1), a.get<float>(2) }, { a.get<float>(3), a.get<float>(4) } };
         sf::FloatRect rb = { { b.get<float>(1), b.get<float>(2) }, { b.get<float>(3), b.get<float>(4) } };
@@ -60,16 +64,20 @@ void InitializeLuaEnvironment(sol::state& lua) {
 }
 
 int main() {
-    sol::state& lua = Game::get().lua;
+    Game& game = Game::get();
+    sol::state& lua = game.lua;
+    game.timer.setTickRate(60);
 
-    auto res = lua.safe_script_file("assets/managed/gmconvert.lua");
-    if (!res.valid()) {
-        sol::error e = res;
-        std::cout << e.what() << "\n";
+    if (std::filesystem::exists("assets/managed/gmconvert.lua")) {
+        auto res = lua.safe_script_file("assets/managed/gmconvert.lua");
+        if (!res.valid()) {
+            sol::error e = res;
+            std::cout << e.what() << "\n";
+        }
+
+        std::filesystem::path p = std::filesystem::path(lua["project_directory"].get<std::string>());
+        GMConvert(p, "assets/managed");
     }
-
-    std::filesystem::path p = std::filesystem::path(lua["project_directory"].get<std::string>());
-    GMConvert(p, "assets/managed");
 
     InitializeLuaEnvironment(lua);
 
@@ -83,18 +91,16 @@ int main() {
 
     SoundManager& sndMgr = SoundManager::get();
     sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
-    Game::get().window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
-    auto& window = Game::get().window;
+    game.window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
+    auto& window = game.window;
 
-    Game::get().consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
+    game.consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
 
     lua["game"]["init"](lua["game"]);
 
     sf::Clock clock;
     int fps = 0;
     int frame = 0;
-    Timer t(60);
-    Game& game = Game::get();
     while (window->isOpen()) {
         if (game.queuedRoom) {
             game.room = std::move(game.queuedRoom);
@@ -106,29 +112,30 @@ int main() {
             }
         }
 
-        t.update();
+        game.timer.update();
         
-        const int ticks = t.getTickCount();
+        const int ticks = game.timer.getTickCount();
         for (int i = 0; i < ticks; ++i) {
             game.getKVP("step").as<sol::function>()(game);
             Keys::get().update();
             if (game.room) {
                 game.room->update();
             }
+
             if (Keys::get().pressed(sf::Keyboard::Scancode::F5)) {
-                const sf::Texture& t = Game::get().consoleRenderer.get()->getTexture();
+                const sf::Texture& t = game.consoleRenderer.get()->getTexture();
                 sf::Image i = t.copyToImage();
                 bool saved = i.saveToFile("_.png");
             }
         }
 
-        Game::get().currentRenderer = Game::get().consoleRenderer.get();
-        Game::get().consoleRenderer->clear();
+        game.currentRenderer = game.consoleRenderer.get();
+        game.consoleRenderer->clear();
         if (game.room) {
-            float alpha = t.getAlpha();
+            float alpha = game.timer.getAlpha();
             game.room->draw(alpha);
         }
-        Game::get().consoleRenderer->display();
+        game.consoleRenderer->display();
 
         window->clear();
 
@@ -137,8 +144,8 @@ int main() {
         view.setCenter({ dispSize.x / 2.0f, dispSize.y / 2.0f });
         window->setView(view);
 
-        sf::Sprite renderSprite(Game::get().consoleRenderer->getTexture());
-        sf::Vector2u gameSize = Game::get().consoleRenderer->getSize();
+        sf::Sprite renderSprite(game.consoleRenderer->getTexture());
+        sf::Vector2u gameSize = game.consoleRenderer->getSize();
 
         if (game.letterbox && dispSize.x > gameSize.x && dispSize.y > gameSize.y) {
             float scaleX = floorf(dispSize.x / (float)gameSize.x);
@@ -197,7 +204,7 @@ int main() {
         }
 
         float delta = clock.restart().asSeconds();
-        Game::get().fps = 1.f / delta;
+        game.fps = 1.f / delta;
 
         ++frame;
     }

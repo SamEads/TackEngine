@@ -1,7 +1,7 @@
 #pragma once
 
-#include <SFML/Graphics.hpp>
 #include <sol/sol.hpp>
+#include "graphics.h"
 
 class Keys {
 public:

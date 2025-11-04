@@ -1,16 +1,19 @@
 #pragma once
 
-#include <SFML/Graphics.hpp>
+#include "graphics.h"
 #include <string>
-#include "drawable.h"
+#include "object.h"
 
 class Tileset;
-class Tilemap : public Drawable {
+class Tilemap : public Object {
 public:
-    sf::VertexArray va;
     std::vector<unsigned int> tileData;
     int tileCountX, tileCountY;
     std::string name;
     Tileset* tileset;
+    Tilemap(sol::state& lua) : Object(lua) {}
     void draw(Room* room, float alpha) override;
+    int get(int x, int y);
+    void set(int x, int y, int value);
+    static void initializeLua(sol::state& lua);
 };

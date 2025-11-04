@@ -80,11 +80,32 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		return sol::make_object(lua, ref);
     };
 
+    lua["sound"]["set_loops"] = [&](sol::object sound, bool loops) {
+		if (sound.is<SoundInstanceReference>()) {
+			auto& inst = sound.as<SoundInstanceReference>();
+			auto it = inst.buffer->instances.find(inst.id);
+			if (it == inst.buffer->instances.end()) {
+				return;
+			}
+			it->second->sound->setLooping(loops);
+		}
+	};
+
     lua["sound"]["is_playing"] = [&](sol::object sound) {
 		if (sound.is<SoundAsset>()) {
 			auto& asset = sound.as<SoundAsset>();
-			auto& bufs = buffers[asset.name];
-			return !bufs.instances.empty();
+			auto it = buffers.find(asset.name);
+			if (it == buffers.end()) {
+				return false;
+			}
+			auto& bufs = it->second;
+			if (!bufs.instances.empty()) {
+				for (auto& i : bufs.instances) {
+					if (i.second->sound->getStatus() == sf::Sound::Status::Playing && i.second->sound->getVolume() != 0 && i.second->sound->getPlayingOffset() < i.second->sound->getBuffer().getDuration()) {
+						return true;
+					}
+				}
+			}
 		}
 		else if (sound.is<SoundInstanceReference>()) {
 			auto& inst = sound.as<SoundInstanceReference>();
@@ -157,11 +178,11 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 			auto& ref = sound.as<SoundInstanceReference>();
 			auto it = ref.buffer->instances.find(ref.id);
 			if (it != ref.buffer->instances.end()) {
-				it->second->sound->setVolume(it->second->sound->getVolume() * 0.05f);
-				std::lock_guard<std::mutex> lock(mutex);
-				unloading.emplace_back(std::move(it->second->sound));
+				it->second->sound->stop();
+				// std::lock_guard<std::mutex> lock(mutex);
+				// unloading.emplace_back(std::move(it->second->sound));
+				ref.buffer->instances.erase(it);
 			}
-			ref.buffer->instances.erase(it);
 		}
     };
 }

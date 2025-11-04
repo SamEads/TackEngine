@@ -69,6 +69,30 @@ void SpriteIndex::draw(sf::RenderTarget &target, sf::Vector2f position, float fr
     target.draw(r, Game::get().currentShader);
 }
 
+static inline void DrawSprite(SpriteIndex* spriteIndex, float imageIndex, float x, float y) {
+    if (spriteIndex == nullptr) return;
+
+    int frameCount = spriteIndex->frames.size();
+    int frameIndex = static_cast<int>(floorf(imageIndex)) % frameCount;
+
+    int texX = spriteIndex->frames[frameIndex].frameX;
+    int texY = spriteIndex->frames[frameIndex].frameY;
+    
+    auto& sprite = spriteIndex->sprite;
+    sprite->setTextureRect({ { texX, texY }, { spriteIndex->width, spriteIndex->height } });
+
+    sprite->setPosition({ x, y });
+    sprite->setOrigin({ static_cast<float>(spriteIndex->originX), static_cast<float>(spriteIndex->originY) });
+    sprite->setScale({ 1, 1 });
+    sprite->setColor(sf::Color::White);
+    if (sprite->getRotation() != sf::degrees(0)) {
+        sprite->setRotation(sf::degrees(0));
+    }
+
+    auto& game = Game::get();
+    game.currentRenderer->draw(*(sprite.get()), game.currentShader);
+}
+
 void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
     lua.new_usertype<SpriteIndex>(
         "SpriteIndex", sol::no_constructor,
@@ -224,10 +248,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         game.currentRenderer->draw(cs, game.currentShader);
     };
 
-    gfx["draw_sprite"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y) {
-        if (spriteIndex == nullptr) return;
-        spriteIndex->draw(*Game::get().currentRenderer, { x, y }, imageIndex);
-    };
+    gfx["draw_sprite"] = DrawSprite;
 
     gfx["draw_sprite_ext"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float rot, sol::table color) {
         if (spriteIndex == nullptr) return;

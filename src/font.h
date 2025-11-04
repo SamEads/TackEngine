@@ -1,6 +1,5 @@
 #pragma once
 
-#include <SFML/Graphics.hpp>
 #include <sol/sol.hpp>
 #include "sprite.h"
 

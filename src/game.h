@@ -1,25 +1,34 @@
 #pragma once
 
-#include <SFML/Graphics.hpp>
+#include "graphics.h"
 #include "room.h"
 #include "util/profiler.h"
+#include "util/timer.h"
 
 class Game {
 public:
     Profiler profiler;
     sol::state lua;
     bool letterbox = true;
-    sf::RenderTarget* currentRenderer;
-    std::unique_ptr<sf::RenderTexture> consoleRenderer;
-    std::unique_ptr<sf::RenderWindow> window;
     uint64_t roomId;
     std::unique_ptr<Room> room;
     std::unique_ptr<Room> queuedRoom;
     std::filesystem::path assetsFolder = "assets";
     std::unordered_map<std::string, RoomReference> rooms;
     std::unordered_map<std::string, sol::object> kvp;
-    sf::Shader* currentShader;
+    Timer timer;
     float fps = 0;
+
+#ifdef USE_RAYLIB_BACKEND
+    RenderTexture consoleRenderer;
+    Shader* currentShader;
+#else
+    sf::RenderTarget* currentRenderer;
+    std::unique_ptr<sf::RenderTexture> consoleRenderer;
+    std::unique_ptr<sf::RenderWindow> window;
+    sf::Shader* currentShader;
+#endif
+
     static Game& get() {
         static Game game;
         return game;

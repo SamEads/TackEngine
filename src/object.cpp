@@ -77,8 +77,25 @@ std::vector<sf::Vector2f> Object::getPoints() const {
     return transformed;
 }
 
-const bool Object::extends(BaseObject *o) const
-{
+void Object::setDyn(const std::string &key, sol::main_object obj) {
+    auto it = kvp.find(key);
+    if (it == kvp.end()) {
+        kvp.insert({ key, sol::object(std::move(obj)) });
+    }
+    else {
+        it->second = sol::object(std::move(obj));
+    }
+}
+
+sol::object Object::getDyn(const std::string &ref) {
+    auto it = kvp.find(ref);
+    if (it == kvp.end()) {
+        return sol::lua_nil;
+    }
+    return it->second;
+}
+
+const bool Object::extends(BaseObject *o) const {
     if (o == nullptr) return false;
     if (self == o) return true;
     if (parent == nullptr) return false;
@@ -102,9 +119,14 @@ const bool Object::extends(BaseObject *o) const
 }
 
 void Object::draw(Room *room, float alpha) {
-    if (runScript("draw", room, alpha) || !spriteIndex) {
-		return;
-	}
+    auto it = kvp.find("draw");
+    if (it != kvp.end()) {
+        it->second.as<sol::function>()(MyReference, room, alpha);
+        return;
+    }
+
+    if (!spriteIndex) return;
+    
 	float interpX = lerp(xPrev, x, alpha);
 	float interpY = lerp(yPrev, y, alpha);
 	spriteIndex->draw(*Game::get().currentRenderer, { interpX, interpY }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
@@ -152,7 +174,7 @@ static sol::object ObjectCreate(
     std::unique_ptr<BaseObject>& memPtr = lua[identifier].get<std::unique_ptr<BaseObject>&>();
 
     baseClasses[identifier] = ObjectManager::ScriptedInfo {
-        lua[identifier],
+        &memPtr,
         [](BaseObject* original) {
             return std::make_unique<Object>(*original);
         }
@@ -197,18 +219,10 @@ static sol::object ObjectCreateRecursive(
     sol::object objSol = sol::lua_nil;
 
     auto deduceType = [](const json& v) {
-        if (v.is_number_integer()) {
-            return ConvertType::INTEGER;
-        }
-        else if (v.is_number()) {
-            return ConvertType::REAL;
-        }
-        else if (v.is_boolean()) {
-            return ConvertType::BOOLEAN;
-        }
-        else if (v.is_string()) {
-            return ConvertType::STRING;
-        }
+        if (v.is_number_integer())  return ConvertType::INTEGER;
+        if (v.is_number())          return ConvertType::REAL;
+        if (v.is_boolean())         return ConvertType::BOOLEAN;
+        if (v.is_string())          return ConvertType::STRING;
         return ConvertType::STRING;
     };
 
@@ -218,7 +232,7 @@ static sol::object ObjectCreateRecursive(
         if (it == objMgr.baseClasses.end()) {
             ObjectCreateRecursive(parentIdentifier, lua, assets, objectScriptPaths);
         }
-        std::unique_ptr<BaseObject>& parentObj = objMgr.baseClasses.at(parentIdentifier).object.as<std::unique_ptr<BaseObject>&>();
+        std::unique_ptr<BaseObject>& parentObj = *objMgr.baseClasses.at(parentIdentifier).objectPtr;
         objSol = ObjectCreate(identifier, parentObj, lua, assets, objectScriptPaths);
         std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
         for (auto& prop : j["properties"]) {
@@ -232,8 +246,8 @@ static sol::object ObjectCreateRecursive(
             obj->rawProperties[prop["name"]] = { static_cast<ConvertType>(prop.value("type", static_cast<int>(deduceType(prop["value"])))), prop["value"] };
         }
     }
-    std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
 
+    std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
     obj->visible = j["visible"];
 
     if (!j["sprite"].is_null()) {
@@ -248,7 +262,7 @@ std::unique_ptr<Object> ObjectManager::make(sol::state &lua, BaseObject *baseObj
         auto& list = baseClasses;
 
         auto it = std::find_if(list.begin(), list.end(), [&baseObject](const std::pair<std::string, ScriptedInfo>& p) {
-            return p.second.object.as<BaseObject*>() == baseObject;
+            return p.second.objectPtr->get() == baseObject;
         });
 
         if (it != list.end()) {
@@ -324,14 +338,18 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         "xprevious",    sol::readonly(&Object::xPrev),
         "yprevious",    sol::readonly(&Object::yPrev),
         "object_index", sol::readonly(&Object::self),
+
         "bbox_left",    sol::readonly_property(&Object::bboxLeft),
         "bbox_right",   sol::readonly_property(&Object::bboxRight),
         "bbox_bottom",  sol::readonly_property(&Object::bboxBottom),
         "bbox_top",     sol::readonly_property(&Object::bboxTop),
         "bbox_width",     sol::readonly_property(&Object::bboxWidth),
         "bbox_height",     sol::readonly_property(&Object::bboxHeight),
+
         "depth",        &Object::depth,
         "visible",      &Object::visible,
+        "active",       &Object::active,
+
         sol::meta_function::index,      &Object::getDyn,
         sol::meta_function::new_index,  &Object::setDyn
     );
@@ -345,23 +363,29 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
 
     lua.new_usertype<Object::Reference>(
         "ObjectReference", sol::no_constructor,
+        
+        "force_position", [](const Object::Reference& caller, float x, float y) {
+            caller.object->forcePosition(x, y);
+        },
+        "force_x", [](const Object::Reference& caller, float x) {
+            caller.object->x = x;
+            caller.object->xPrev = x;
+        },
+        "force_y", [](const Object::Reference& caller, float y) {
+            caller.object->y = y;
+            caller.object->yPrev = y;
+        },
         "extends", [](const Object::Reference& caller, BaseObject* base) {
-            return caller.object.as<Object*>()->extends(base);
+            return caller.object->extends(base);
         },
         sol::meta_function::equal_to, [](const Object::Reference& a, const Object::Reference& b) {
             return (a.object == b.object);
         },
         sol::meta_function::index, [](Object::Reference& self, const std::string& key, sol::this_state s) -> sol::object {
-            sol::state_view lua(s);
-            if (self.object) {
-                return self.object.as<sol::table>()[key];
-            }
-            else {
-                return sol::make_object(lua, sol::lua_nil);
-            }
+            return self.table[key];
         },
         sol::meta_function::new_index, [](Object::Reference& self, const std::string& key, sol::object value) {
-            self.object.as<sol::table>()[key] = value;
+            self.table[key] = value;
         }
     );
 
