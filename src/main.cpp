@@ -1,3 +1,136 @@
+#ifdef MIN_EXAMPLE
+
+#include <SFML/Graphics.hpp>
+#ifdef USE_LUA_JIT
+extern "C" {
+    #include <luajit.h>
+}
+#endif
+#include <sol/sol.hpp>
+
+#include "game.h"
+#include "sprite.h"
+int main() {
+    auto& game = Game::get();
+
+    sol::state& lua = game.lua;
+    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::package, sol::lib::math, sol::lib::table, sol::lib::jit, sol::lib::ffi);
+    
+    game.window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 256 * 3, 224 * 3 }), "TackEngine");
+    game.window->setVerticalSyncEnabled(false);
+
+    game.consoleRenderer = std::make_unique<sf::RenderTexture>(sf::Vector2u { 256, 224 });
+    game.currentRenderer = game.consoleRenderer.get();
+
+    sol::table gametbl = lua.create_named_table("game");
+
+    SpriteManager::get().initializeLua(lua, "assets");
+
+    auto objectBase = lua.create_table_with(
+        "x", 0,
+        "y", 0,
+        "hspeed", 0,
+        "vspeed", 0,
+        "xprevious", 0,
+        "yprevious", 0,
+        "sprite_index", sol::lua_nil
+    );
+    
+    auto res = lua.load(
+R"(
+local object = ...
+
+local object_reference = {}
+function object_reference:new(object)
+    local mt = {
+        __index = function(self, k)
+            return object[k]
+        end,
+        __newindex = function(self, k, v)
+            object[k] = v
+        end
+    }
+    return setmetatable({
+        object = object,
+        id = 0
+    }, mt)
+end
+
+function object:extend()
+    local o = setmetatable({}, self)
+    self.__index = self
+    return o
+end
+
+function object:new()
+    local o = setmetatable({}, self)
+    self.__index = self
+    local ref = object_reference:new(o)
+    return ref
+end
+
+function object:draw()
+    gfx.draw_sprite(self.spr, 0, self.x, self.y)
+end
+)"
+    )(objectBase);
+
+    if (!res.valid()) {
+        sol::error e = res;
+        std::cout << e.what() << "\n";
+    }
+
+    lua["Guy"] = objectBase;
+    auto guys = lua.create_table();
+    lua["guys"] = guys;
+
+    lua.safe_script_file("assets/scripts/test.lua");
+    gametbl["init"].get<sol::function>()();
+
+    auto updatePositions = lua.load(
+R"(
+    local tbl = ...
+    local count = #tbl
+    for i = 1, count do
+        local t = tbl[i]
+        t.xprevious = t.x
+        t.yprevious = t.y
+    end
+)"
+    );
+
+    while (game.window->isOpen()) {
+        while (const std::optional event = game.window->pollEvent()) {
+            if (event->is<sf::Event::Closed>()) {
+                game.window->close();
+            }
+        }
+
+        updatePositions(guys);
+
+        gametbl["update"].get<sol::function>()();
+        game.consoleRenderer->clear(sf::Color::White);
+        gametbl["draw"].get<sol::function>()();
+        /*
+        auto& spr = SpriteManager::get().sprites["spr_mario_small_idle"];
+        for (int i = 0; i < 100; ++i) {
+            for (int j = 0; j < 100; ++j) {
+                spr.draw(*Game::get().currentRenderer, { i * 2.5f, j * 2.5f });
+            }
+        }
+        */
+        game.consoleRenderer->display();
+
+        game.window->clear();
+        sf::Sprite renderSprite(game.consoleRenderer->getTexture());
+        renderSprite.setPosition({ 150, 150 });
+        game.window->draw(renderSprite);
+        game.window->display();
+    }
+}
+
+#else
+
 #ifdef USE_LUA_JIT
 extern "C" {
 #include <luajit.h>
@@ -213,3 +346,5 @@ int main() {
     TilesetManager::get().tilesets.clear();
     SpriteManager::get().sprites.clear();
 }
+
+#endif

@@ -119,14 +119,7 @@ const bool Object::extends(BaseObject *o) const {
 }
 
 void Object::draw(Room *room, float alpha) {
-    auto it = kvp.find("draw");
-    if (it != kvp.end()) {
-        it->second.as<sol::function>()(MyReference, room, alpha);
-        return;
-    }
-
     if (!spriteIndex) return;
-    
 	float interpX = lerp(xPrev, x, alpha);
 	float interpY = lerp(yPrev, y, alpha);
 	spriteIndex->draw(*Game::get().currentRenderer, { interpX, interpY }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
@@ -320,7 +313,196 @@ std::unique_ptr<Object> ObjectManager::make(sol::state &lua, BaseObject *baseObj
     return copied;
 }
 
+/*
+sol::table ObjectCreate(ObjectManager& objMgr, const std::string& identifier, sol::table extends, sol::state& lua) {
+    std::cout << "Object create: " << identifier << "\n";
+
+    sol::table obj = lua.create_named_table(identifier);
+
+    if (extends == sol::lua_nil) {
+        // Base object
+        obj["x"] = 0;
+        obj["y"] = 0;
+        obj["xprevious"] = 0;
+        obj["yprevious"] = 0;
+        obj["hspeed"] = 0;
+        obj["vspeed"] = 0;
+        obj["image_xscale"] = 1;
+        obj["image_yscale"] = 1;
+        obj["image_speed"] = 1;
+        obj["image_index"] = 0;
+        obj["increment_image_speed"] = true;
+        obj["object_index"] = obj;
+        obj["super"] = sol::lua_nil;
+        obj["id"] = 0;
+
+        sol::table metatable = lua.create_table();
+        metatable["__index"] = obj;
+
+        obj[sol::metatable_key] = metatable;
+    } else {
+        sol::table metatable = lua.create_table();
+        metatable["__index"] = extends;
+
+        obj[sol::metatable_key] = metatable;
+        
+        obj["super"] = extends;
+        obj["object_index"] = obj;
+    }
+
+    return obj;
+}
+*/
+
+sol::table ObjectCreate(ObjectManager& objMgr, const std::string& identifier, sol::table extends, sol::state& lua, bool verbose = false) {
+    sol::table table = sol::lua_nil;
+    if (extends != sol::lua_nil) {
+        table = lua.create_table();
+        if (verbose) {
+            std::cout << "^^^ VVV\n";
+        }
+        for (auto& [k, v] : extends.pairs()) {
+            if (verbose) {
+                std::cout << k.as<std::string>() << "\n";
+            }
+            table[k] = v;
+        }
+        if (verbose) std::cout << "--\n";
+    }
+    else {
+        table = objMgr.createObjectTable();
+    }
+
+    table["object_index"] = lua[identifier];
+    table["super"] = extends;
+    table["__index"] = table;
+    table["super"] = extends;
+    table["name"] = identifier;
+
+    lua[identifier] = table;
+
+    return table;
+}
+
+sol::table recurse(
+    ObjectManager& objMgr,
+    sol::state& lua,
+    const std::string& identifier,
+    const std::filesystem::path &assets,
+    const std::unordered_map<std::string, std::filesystem::path>& scripts
+) {
+    if (objMgr.baseClasses.find(identifier) != objMgr.baseClasses.end()) {
+        return sol::lua_nil;
+    }
+    
+    std::filesystem::path p = assets / "managed" / "objects" / (identifier + ".json");
+    if (!std::filesystem::exists(p)) {
+        return sol::lua_nil;
+    }
+
+    std::ifstream i(p);
+    json j = json::parse(i);
+
+    sol::table o = sol::lua_nil;
+
+    if (!j["parent"].is_null()) {
+        std::string parentStr = j["parent"];
+        std::cout << "PARENT TO " << identifier << ": " << parentStr << "\n";
+        if (objMgr.baseClasses.find(parentStr) == objMgr.baseClasses.end()) {
+            sol::table parentObject = recurse(objMgr, lua, parentStr, assets, scripts);
+            o = ObjectCreate(objMgr, identifier, parentObject, lua, parentStr == "obj_block_parent" || parentStr == "obj_qblock");
+        }
+        else {
+            sol::table parentObject = lua[parentStr];
+            o = ObjectCreate(objMgr, identifier, parentObject, lua, parentStr == "obj_block_parent" || parentStr == "obj_qblock");
+        }
+    }
+    else {
+        o = ObjectCreate(objMgr, identifier, sol::lua_nil, lua);
+    }
+
+
+    objMgr.baseClasses.insert({ identifier, {} });
+
+    if (!j["sprite"].is_null()) {
+        o["sprite_index"] = &SpriteManager::get().sprites.at(j["sprite"]);
+    }
+
+    // Run object file script
+    auto it = scripts.find(identifier);
+    if (it != scripts.end()) {
+        auto res = lua.safe_script_file(it->second.string());
+        if (!res.valid()) {
+            sol::error e = res;
+            std::cout << e.what() << "\n";
+        }
+    }
+
+    return o;
+}
+
 void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
+    for (auto& it : std::filesystem::recursive_directory_iterator(assets / "scripts")) {
+        if (it.is_regular_file()) {
+            if (it.path().extension() == ".lua") {
+                std::string identifier = it.path().filename().replace_extension("").string();
+                scriptPaths[identifier] = it.path();
+            }
+        }
+    }
+
+    createObjectTable = lua.load(
+R"(
+local table = {
+    x = 0,
+    y = 0,
+    xprevious = 0,
+    yprevious = 0,
+    hspeed = 0,
+    vspeed = 0,
+    image_xscale = 1,
+    image_yscale = 1,
+    image_speed = 1,
+    sprite_index = nil,
+    image_index = 0,
+    increment_image_speed = true,
+    image_angle = 0
+}
+function table:bbox_left()
+    return 0
+end
+
+function table:bbox_right()
+    return 16
+end
+
+function table:bbox_top()
+    return 0
+end
+
+function table:bbox_bottom()
+    return 16
+end
+
+return table
+)");
+
+    lua["object_create"] = [&](const std::string& identifier, sol::table extends) {
+        return ObjectCreate(*this, identifier, extends, lua);
+    };
+
+    for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "objects")) {
+        if (!it.is_regular_file()) {
+            continue;
+        }
+        std::string identifier = it.path().filename().replace_extension("").string(); // okay then
+        
+        recurse(*this, lua, identifier, assets, scriptPaths);
+
+        // auto table = lua.create_named_table(identifier);
+    }
+
+    /*
     lua.new_usertype<Object>(
         "Object",       sol::no_constructor,
         "x",            &Object::x,
@@ -339,13 +521,6 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         "yprevious",    sol::readonly(&Object::yPrev),
         "object_index", sol::readonly(&Object::self),
 
-        "bbox_left",    sol::readonly_property(&Object::bboxLeft),
-        "bbox_right",   sol::readonly_property(&Object::bboxRight),
-        "bbox_bottom",  sol::readonly_property(&Object::bboxBottom),
-        "bbox_top",     sol::readonly_property(&Object::bboxTop),
-        "bbox_width",     sol::readonly_property(&Object::bboxWidth),
-        "bbox_height",     sol::readonly_property(&Object::bboxHeight),
-
         "depth",        &Object::depth,
         "visible",      &Object::visible,
         "active",       &Object::active,
@@ -363,7 +538,10 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
 
     lua.new_usertype<Object::Reference>(
         "ObjectReference", sol::no_constructor,
-        
+        "bbox_left", [](const Object::Reference& caller) { return caller.object->bboxLeft(); },
+        "bbox_right", [](const Object::Reference& caller) { return caller.object->bboxRight(); },
+        "bbox_top", [](const Object::Reference& caller) { return caller.object->bboxTop(); },
+        "bbox_bottom", [](const Object::Reference& caller) { return caller.object->bboxBottom(); },
         "force_position", [](const Object::Reference& caller, float x, float y) {
             caller.object->forcePosition(x, y);
         },
@@ -414,5 +592,6 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         std::string identifier = it.path().filename().replace_extension("").string(); // okay then
         ObjectCreateRecursive(identifier, lua, assets, scriptPaths);
     }
+    */
 
 }

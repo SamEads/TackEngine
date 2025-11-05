@@ -1,7 +1,7 @@
 #pragma once
 
 #include <sol/sol.hpp>
-#include "graphics.h"
+#include <SFML/Window/Keyboard.hpp>
 
 class Keys {
 public:

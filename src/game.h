@@ -1,6 +1,6 @@
 #pragma once
 
-#include "graphics.h"
+#include <SFML/Graphics.hpp>
 #include "room.h"
 #include "util/profiler.h"
 #include "util/timer.h"

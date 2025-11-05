@@ -4,7 +4,6 @@
 #include <deque>
 #include <unordered_map>
 #include <sol/sol.hpp>
-#include "graphics.h"
 #include "vendor/json.hpp"
 #include "sprite.h"
 #include "util/mathhelper.h"
@@ -121,7 +120,7 @@ public:
         return rect;
     }
 
-    std::vector<Vector2f> getPoints() const;
+    std::vector<sf::Vector2f> getPoints() const;
 
     void setDyn(const std::string& key, sol::main_object obj);
 
@@ -204,6 +203,8 @@ public:
         static ObjectManager om;
         return om;
     }
+
+    sol::function createObjectTable;
 
     std::unique_ptr<Object> make(sol::state& lua, BaseObject* baseObject);
 

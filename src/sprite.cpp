@@ -256,7 +256,9 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
     };
 
     gfx["draw_sprite_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, bool keepSpriteOriginPosition, float rot, sol::table color) {
-        if (spriteIndex == nullptr) return;
+        if (spriteIndex == nullptr) {
+            return;
+        }
         spriteIndex->drawOrigin(*Game::get().currentRenderer,
             (keepSpriteOriginPosition) ? sf::Vector2f(x - spriteIndex->originX + originX, y - spriteIndex->originY + originY) : sf::Vector2f(x, y),
             imageIndex, { xscale, yscale }, { originX, originY }, MakeColor(color), rot);

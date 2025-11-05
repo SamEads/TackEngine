@@ -4,6 +4,7 @@ project(Tack-Engine LANGUAGES CXX C)
 
 set(USE_LUA_JIT true)
 # set(USE_RAYLIB_BACKEND true)
+set(SOL_ALL_SAFETIES_ON true)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -52,6 +53,7 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
     "external/sys_info/src/*.cpp"
 )
 
+# Exclude the backend implementation we're not using
 if(USE_RAYLIB_BACKEND)
     list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*renderer_sfml\\.cpp$")
 else()

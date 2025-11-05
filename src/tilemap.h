@@ -1,6 +1,6 @@
 #pragma once
 
-#include "graphics.h"
+#include <SFML/Graphics.hpp>
 #include <string>
 #include "object.h"
 

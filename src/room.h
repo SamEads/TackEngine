@@ -10,7 +10,7 @@ public:
     std::string name;
     bool tiledX, tiledY;
     bool offsetX, offsetY;
-    c_Color color = c_Color { 255, 255, 255, 255 };
+    sf::Color color = sf::Color { 255, 255, 255, 255 };
 
     Background(sol::state& lua) : Object(lua) {}
     void draw(Room* room, float alpha) override;
@@ -25,13 +25,81 @@ public:
 class Room {
 private:
     const RoomReference* roomReference;
+    sol::state& lua;
+
+    std::unordered_map<std::string, sol::object> kvp;
+    void setKVP(const std::string& key, sol::main_object obj) {
+        auto it = kvp.find(key);
+        if (it == kvp.end()) {
+            kvp.insert({ key, sol::object(std::move(obj)) });
+        }
+        else {
+            it->second = sol::object(std::move(obj));
+        }
+    }
+    sol::object getKVP(const std::string& ref) {
+        auto it = kvp.find(ref);
+        if (it == kvp.end()) {
+            return sol::lua_nil;
+        }
+        return it->second;
+    }
+
+    void createAndRoomStartEvents();
+
+    float getCameraX() const { return cameraX; }
+    float getCameraY() const { return cameraY; }
+    void setCameraX(float val);
+    void setCameraY(float val);
+
+    void setView(float cx, float cy);
+
+    static sol::function luaUpdate;
+    static sol::function luaDraw;
+
+public:
+    Room(sol::state& lua, const RoomReference& room);
+    static void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+
+    ObjectId currentId = 0;
+    sol::table objects;
+    sol::table addQueue;
+    sol::table deleteQueue;
+    std::unordered_map<ObjectId, sol::table> ids;
+
+    float width;
+    float height;
+
+    float cameraX = 0;
+    float cameraY = 0;
+
+    float cameraPrevX = 0;
+    float cameraPrevY = 0;
+
+    float cameraWidth = 0;
+    float cameraHeight = 0;
+
+    float renderCameraX = 0;
+    float renderCameraY = 0;
+
+    void load();
+
+    void update();
+    void draw(float alpha);
+};
+
+#ifdef OLD_ROOM
+class Room {
+private:
+    const RoomReference* roomReference;
     void createAndRoomStartEvents();
 public:
     static void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 
     ObjectId currentId = 0;
     
-    std::vector<std::unique_ptr<Object>> instances;
+    // std::vector<std::unique_ptr<Object>> instances;
+    sol::table objects;
     std::vector<Background*> backgrounds;
     std::vector<Tilemap*> tilemaps;
     std::vector<Object*> drawables;
@@ -71,6 +139,7 @@ public:
     void activateObjectRegion(sol::object object, float x1, float y1, float x2, float y2);
 
     void updateQueue() {
+        /*
         // Add queued objects
         for (auto& o : addQueue) {
             instances.push_back(std::move(o));
@@ -88,9 +157,11 @@ public:
 
         addQueue.clear();
         deleteQueue.clear();
+        */
     }
 
     void objectDestroy(std::unique_ptr<BaseObject>& base) {
+        /*
         for (auto& i : instances) {
             if (i->extends(base.get())) {
                 ObjectId id = i->MyReference.id;
@@ -98,6 +169,7 @@ public:
                 ids.erase(id);
             }
         }
+        */
     }
 
     void instanceDestroy(ObjectId id) {
@@ -125,6 +197,8 @@ public:
     }
 
     int objectCount(BaseObject* baseType) {
+        return 0;
+        /*
         if (baseType == NULL) {
             return false;
         }
@@ -133,6 +207,7 @@ public:
             if (i->extends(baseType)) c++;
         }
         return c;
+        */
     }
 
     bool objectExists(BaseObject* baseType) {
@@ -294,7 +369,7 @@ public:
 
         float width = x2 - x1;
         float height = y2 - y1;
-        std::vector<Vector2f> callerPts = {
+        std::vector<sf::Vector2f> callerPts = {
             { x1, y1 }, { x1 + width, y1 },
             { x1 + width, y1 + width }, { x1, y1 + width }
         };
@@ -433,3 +508,4 @@ public:
         return it->second;
     }
 };
+#endif
