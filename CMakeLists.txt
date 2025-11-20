@@ -3,41 +3,26 @@ cmake_minimum_required(VERSION 3.28)
 project(Tack-Engine LANGUAGES CXX C)
 
 set(USE_LUA_JIT true)
-# set(USE_RAYLIB_BACKEND true)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET FALSE)
 
-if(USE_RAYLIB_BACKEND)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(
-        raylib
-        GIT_REPOSITORY "https://github.com/raysan5/raylib.git"
-        GIT_TAG "master"
-        GIT_PROGRESS TRUE
-    )
-    if(NOT raylib_POPULATED)
-        FetchContent_MakeAvailable(raylib)
-    endif()
-else()
-    # sfml
-    include(CMakePackageConfigHelpers)
-    include(CheckCXXCompilerFlag)
-    include(CMakeDependentOption)
-    include(GNUInstallDirs)
-    FetchContent_Declare(
-        SFML
-        GIT_REPOSITORY https://github.com/SFML/SFML.git
-        GIT_TAG 3.0.1
-        GIT_SHALLOW ON
-        EXCLUDE_FROM_ALL
-        SYSTEM)
-    FetchContent_MakeAvailable(SFML)
-endif()
+# sfml
+include(CMakePackageConfigHelpers)
+include(CheckCXXCompilerFlag)
+include(CMakeDependentOption)
+include(GNUInstallDirs)
+FetchContent_Declare(
+    SFML
+    GIT_REPOSITORY https://github.com/SFML/SFML.git
+    GIT_TAG 3.0.1
+    GIT_SHALLOW ON
+    EXCLUDE_FROM_ALL
+    SYSTEM
+)
+FetchContent_MakeAvailable(SFML)
 
 if(NOT USE_LUA_JIT)
     file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
@@ -51,12 +36,6 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
     "src/*.c"
     "external/sys_info/src/*.cpp"
 )
-
-if(USE_RAYLIB_BACKEND)
-    list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*renderer_sfml\\.cpp$")
-else()
-    list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*renderer_raylib\\.cpp$")
-endif()
 
 add_executable(${PROJECT_NAME})
 set(CMAKE_CXX_FLAGS "/Ox /EHsc /MP")
@@ -77,17 +56,24 @@ else()
     )
 endif()
 
-if(USE_RAYLIB_BACKEND)
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        raylib
-    )
-    target_compile_definitions(${PROJECT_NAME} PUBLIC USE_RAYLIB_BACKEND)
-else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        SFML::Graphics
-        SFML::Audio
-    )
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    SFML::Graphics
+    SFML::Audio
+)
+
+#add_custom_command(
+#    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/embedded_scripts.h
+#    COMMAND ${CMAKE_COMMAND} 
+#        -DSCRIPTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/assets/scripts
+#        -DOUTPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/src/embedded_scripts.h
+#        -P ${CMAKE_CURRENT_SOURCE_DIR}/embed_scripts.cmake
+#    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/embed_scripts.cmake
+#    COMMENT "Generating embedded_scripts.h"
+#    VERBATIM
+#)
+#add_custom_target(generate_embedded_scripts DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/embedded_scripts.h)
+#add_dependencies(${PROJECT_NAME} generate_embedded_scripts)
+target_compile_definitions(${PROJECT_NAME} PRIVATE EMBED_SCRIPTS)
     
 if(USE_LUA_JIT)
     target_link_directories(${PROJECT_NAME} PRIVATE

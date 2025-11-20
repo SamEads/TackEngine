@@ -42,6 +42,6 @@ void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path&
             nullptr
         );
         tsMgr.tilesets[identifier] = ts;
-
+        lua[identifier] = &tsMgr.tilesets[identifier];
     }
 }

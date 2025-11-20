@@ -45,7 +45,10 @@ void ShaderManager::initializeLua(sol::state& lua) {
 }
 
 void ShaderManager::setUniform(Shader *shader, const std::string &uniform, sol::object data) {
-    if (data.is<float>()) {
+    if (data.is<bool>()) {
+        shader->baseShader.setUniform(uniform, data.as<bool>());
+    }
+    else if (data.is<float>()) {
         shader->baseShader.setUniform(uniform, data.as<float>());
     }
     else if (data.is<SpriteIndex*>()) {

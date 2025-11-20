@@ -10,7 +10,7 @@ public:
     std::string name;
     bool tiledX, tiledY;
     bool offsetX, offsetY;
-    c_Color color = c_Color { 255, 255, 255, 255 };
+    sf::Color color = { 255, 255, 255, 255 };
 
     Background(sol::state& lua) : Object(lua) {}
     void draw(Room* room, float alpha) override;
@@ -22,49 +22,69 @@ public:
     std::filesystem::path p;
 };
 
+
 class Room {
 private:
+    class Camera {
+    public:
+        Room* room;
+        float x, y;
+        float width, height;
+        float xPrev, yPrev;
+        float getX () const { return x; }
+        float getY () const { return y; }
+        void setX ( float x ) {
+            this->x = std::clamp(x, 0.0f, room->width - width);
+        }
+        void setY ( float y ) {
+            this->y = std::clamp(y, 0.0f, room->height - height);
+        }
+        float getXPrev () const { return xPrev; }
+        float getYPrev () const { return yPrev; }
+        float getWidth () const { return width; }
+        float getHeight () const { return height; }
+        void teleport(float x, float y) {
+            setX(x);
+            setY(y);
+            this->xPrev = this->x;
+            this->yPrev = this->y;
+        }
+    };
     const RoomReference* roomReference;
+    std::vector<Object*> drawables;
     void createAndRoomStartEvents();
 public:
     static void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 
+    ObjectId myId;
     ObjectId currentId = 0;
     
     std::vector<std::unique_ptr<Object>> instances;
     std::vector<Background*> backgrounds;
     std::vector<Tilemap*> tilemaps;
-    std::vector<Object*> drawables;
 
     std::vector<std::unique_ptr<Object>> addQueue;
-    std::vector<ObjectId> deleteQueue;
+    std::vector<size_t> deleteQueue;
     
     std::unordered_map<ObjectId, Object*> ids;
     sol::state& lua;
 
     int minReserved = 0;
     int width, height;
-    float cameraX = 0, cameraY = 0;
-    float cameraPrevX = 0, cameraPrevY = 0;
+    Camera camera;
     float renderCameraX = 0, renderCameraY = 0;
-    float cameraWidth = 0, cameraHeight = 0;
 
     Room(sol::state& lua, const RoomReference& room);
+    Room(sol::state& lua);
+    ~Room();
 
     void load();
 
-    void update();
+    void timestep();
 
     void draw(float alpha);
 
     void setView(float cx, float cy);
-
-    float getCameraX() const { return cameraX; }
-    float getCameraY() const { return cameraY; }
-
-    void setCameraX(float val);
-
-    void setCameraY(float val);
 
     void deactivateObject(sol::object object);
     void activateObject(sol::object object);
@@ -72,18 +92,30 @@ public:
 
     void updateQueue() {
         // Add queued objects
+        int size = instances.size();
         for (auto& o : addQueue) {
+            o->vectorPos = size;
+            std::cout << "Added object " << o->identifier << "\n";
             instances.push_back(std::move(o));
+            size++;
         }
 
         // Delete objects queued for deletion
-        for (auto& o : deleteQueue) {
-            auto orig = std::find_if(instances.begin(), instances.end(), [o](const auto& unique) {
-                return unique->MyReference.id == o;
-            });
-            if (orig != instances.end()) {
-                instances.erase(orig);
+        if (!deleteQueue.empty()) {
+            std::sort(deleteQueue.begin(), deleteQueue.end(), std::greater<size_t>());
+            for (auto& pos : deleteQueue) {
+                std::cout << "Deleted object " << instances[pos]->identifier << "\n";
+                size_t size = instances.size();
+                if (pos >= size - 1) {
+                    instances.pop_back();
+                }
+                else {
+                    std::swap(instances[pos], instances[instances.size() - 1]);
+                    instances.pop_back();
+                    instances[pos]->vectorPos = pos;
+                }
             }
+            deleteQueue.clear();
         }
 
         addQueue.clear();
@@ -94,34 +126,50 @@ public:
         for (auto& i : instances) {
             if (i->extends(base.get())) {
                 ObjectId id = i->MyReference.id;
-                deleteQueue.push_back(id);
-                ids.erase(id);
+                auto idPos = ids.find(id);
+                if (idPos != ids.end()) {
+                    deleteQueue.push_back(i->vectorPos);
+                    ids.erase(id);
+                }
             }
         }
     }
 
     void instanceDestroy(ObjectId id) {
-        deleteQueue.push_back(id);
-        ids.erase(id);
+        auto idPos = ids.find(id);
+        if (idPos != ids.end()) {
+            deleteQueue.push_back(id);
+            ids.erase(id);
+        }
     }
 
     void instanceDestroyScript(sol::object obj) {
-        Object* object = nullptr;
-
         if (obj.is<Object::Reference>()) {
             Object::Reference& ref = obj.as<Object::Reference>();
-            object = ref.object;
+            Object* object = ref.object;
+
+            auto idPos = ids.find(object->MyReference.id);
+            if (idPos != ids.end()) {
+                object->runScript("destroy", this);
+                deleteQueue.push_back(object->vectorPos);
+                ids.erase(object->MyReference.id);
+            }
         }
-        else if (obj.is<Object*>()) {
-            object = obj.as<Object*>();
-        }
-        else {
+        else if (obj.is<BaseObject*>()) {
+            std::unique_ptr<BaseObject>& base = obj.as<std::unique_ptr<BaseObject>&>();
+            for (auto& i : instances) {
+                if (i->extends(base.get())) {
+                    ObjectId id = i->MyReference.id;
+                    auto idPos = ids.find(id);
+                    if (idPos != ids.end()) {
+                        deleteQueue.push_back(i->vectorPos);
+                        ids.erase(id);
+                    }
+                }
+            }
             return;
         }
-
-        object->runScript("destroy", this);
-        deleteQueue.push_back(object->MyReference.id);
-        ids.erase(object->MyReference.id);
+        return;
     }
 
     int objectCount(BaseObject* baseType) {
@@ -130,41 +178,11 @@ public:
         }
         int c = 0;
         for (auto& i : instances) {
-            if (i->extends(baseType)) c++;
+            if (i->extends(baseType)) {
+                c++;
+            }
         }
         return c;
-    }
-
-    bool objectExists(BaseObject* baseType) {
-        if (baseType == NULL) {
-            return false;
-        }
-        auto it = std::find_if(ids.begin(), ids.end(), [baseType](const auto& o) {
-            Object* optr = o.second;
-            return optr->extends(baseType);
-        });
-        if (it != ids.end()) {
-            return true;
-        }
-        return false;
-    }
-
-    sol::object getTileLayer(const std::string& key) {
-        for (auto& m : tilemaps) {
-            if (m->name == key) {
-                return sol::make_object(lua, m);
-            }
-        }
-        return sol::make_object(lua, sol::lua_nil);
-    }
-
-    sol::object getBackgroundLayer(const std::string& key) {
-        for (auto& bg : backgrounds) {
-            if (bg->name == key) {
-                return sol::make_object(lua, bg);
-            }
-        }
-        return sol::make_object(lua, sol::lua_nil);
     }
 
     std::vector<Object::Reference> objectGetList(BaseObject* baseType);
@@ -189,14 +207,29 @@ public:
         }
         if (obj.is<Object::Reference>()) {
             Object::Reference* ref = obj.as<Object::Reference*>();
-            int refId = ref->id;
+            ObjectId refId = ref->id;
             return ids.find(refId) != ids.end();
         }
-        return false;
+        else if (obj.is<BaseObject>()) {
+            std::unique_ptr<BaseObject>& ref = obj.as<std::unique_ptr<BaseObject>&>();
+            BaseObject* refptr = ref.get();
+            for (auto& i : ids) {
+                if (i.second->extends(refptr)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        else {
+            return false;
+        }
     }
 
     bool instanceExists(Object::Reference reference) {
         int refId = reference.id;
+        if (reference.roomId != myId) {
+            return false;
+        }
         return ids.find(refId) != ids.end();
     }
 
@@ -294,7 +327,7 @@ public:
 
         float width = x2 - x1;
         float height = y2 - y1;
-        std::vector<Vector2f> callerPts = {
+        std::vector<sf::Vector2f> callerPts = {
             { x1, y1 }, { x1 + width, y1 },
             { x1 + width, y1 + width }, { x1, y1 + width }
         };
@@ -334,7 +367,7 @@ public:
 
     Object::Reference instancePlaceScript(Object* caller, float x, float y, sol::object type) {
         if (type == sol::lua_nil) {
-            return Object::Reference { -1, sol::make_object(lua, sol::lua_nil) };
+            return Object::Reference { -1, this->myId, sol::make_object(lua, sol::lua_nil) };
         }
 
         auto callerPts = caller->getPoints();
@@ -348,10 +381,10 @@ public:
         if (type.is<Object::Reference>()) {
             Object::Reference& r = type.as<Object::Reference>();
             if (!instanceExists(r)) {
-                return Object::Reference{ -1, sol::make_object(lua, sol::lua_nil) };
+                return Object::Reference { -1, this->myId, sol::make_object(lua, sol::lua_nil) };
             }
             if (!r.object->active) {
-                return Object::Reference{ -1, sol::make_object(lua, sol::lua_nil) };
+                return Object::Reference { -1, this->myId, sol::make_object(lua, sol::lua_nil) };
             }
             auto answer = polygonsIntersect(callerPts, r.object->getPoints());
             if (answer.intersect) {
@@ -369,7 +402,7 @@ public:
             }
         }
 
-        return Object::Reference { -1, sol::make_object(lua, sol::lua_nil) };
+        return Object::Reference { -1, 0, sol::make_object(lua, sol::lua_nil) };
     }
 
     Object::Reference instanceCreateScript(float x, float y, float depth, BaseObject* baseObject) {
@@ -383,8 +416,8 @@ public:
                 std::cout << e.what() << "\n";
             }
         }
-        ptr->xPrev = ptr->x;
-        ptr->yPrev = ptr->y;
+        ptr->xPrevRender = ptr->xPrev = ptr->x;
+        ptr->yPrevRender = ptr->yPrev = ptr->y;
 
         return ptr->MyReference;
     }
@@ -394,7 +427,7 @@ public:
 
         copiedObject->MyReference.id = currentId++;
         copiedObject->self = baseObject;
-        copiedObject->MyReference = { copiedObject->MyReference.id, sol::make_object(lua, copiedObject.get()), copiedObject.get() };
+        copiedObject->MyReference = Object::Reference { copiedObject->MyReference.id, this->myId, sol::make_object(lua, copiedObject.get()), copiedObject.get() };
         copiedObject->x = x;
         copiedObject->y = y;
         copiedObject->depth = depth;

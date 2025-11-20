@@ -4,7 +4,7 @@
 #include <deque>
 #include <unordered_map>
 #include <sol/sol.hpp>
-#include "graphics.h"
+#include <SFML/Graphics.hpp>
 #include "vendor/json.hpp"
 #include "sprite.h"
 #include "util/mathhelper.h"
@@ -19,42 +19,28 @@ class Object : public Drawable {
 public:
     struct Reference {
         ObjectId id;
+        ObjectId roomId;
         sol::table table;
         Object* object;
     };
     Reference MyReference;
-
-    template <typename ... Args>
-    bool runScript(const std::string& script, Args... args) {
-        auto step = kvp.find(script);
-        if (step != kvp.end()) {
-            auto res = step->second.as<sol::safe_function>()(MyReference, args...);
-            if (!res.valid()) {
-                sol::error e = res;
-                std::cout << e.what() << "\n";
-            }
-            else {
-                return true;
-            }
-        }
-        return false;
-    }
 
     sol::state& lua;
     std::optional<sol::function> drawFunc;
     std::optional<sol::function> stepFunc;
     std::unordered_map<std::string, sol::object> kvp;
 
+    size_t vectorPos;
     float x = 0.0f, y = 0.0f;
     float xspd = 0.0f, yspd = 0.0f;
     float xPrev = 0.0f, yPrev = 0.0f;
+    float xPrevRender = 0.0f, yPrevRender = 0.0f;
     float xScale = 1.0f, yScale = 1.0f;
     float imageIndex = 0.0f;
     float imageSpeed = 0.0f;
     float imageSpeedMod = 1.0f;
     float imageAngle = 0.0f;
     bool incrementImageSpeed = true;
-
     bool active = true;
 
     SpriteIndex* spriteIndex = nullptr;
@@ -121,21 +107,25 @@ public:
         return rect;
     }
 
-    std::vector<Vector2f> getPoints() const;
-
-    void setDyn(const std::string& key, sol::main_object obj);
-
-    sol::object getDyn(const std::string& ref);
-
-    void trySet(sol::object v) {}
-
-    void forcePosition(float x, float y) {
-        this->xPrev = this->x = x;
-        this->yPrev = this->y = y;
+    template <typename ... Args>
+    bool runScript(const std::string& script, Args... args) {
+        auto step = kvp.find(script);
+        if (step != kvp.end()) {
+            auto res = step->second.as<sol::safe_function>()(MyReference, args...);
+            if (!res.valid()) {
+                sol::error e = res;
+                std::cout << e.what() << "\n";
+            }
+            else {
+                return true;
+            }
+        }
+        return false;
     }
-
+    std::vector<sf::Vector2f> getPoints() const;
+    void setDyn(const std::string& key, sol::main_object obj);
+    sol::object getDyn(const std::string& ref);
     const bool extends(BaseObject* o) const;
-
     void draw(Room* room, float alpha) override;
     void beginDraw(Room* room, float alpha) override;
     void endDraw(Room* room, float alpha) override;

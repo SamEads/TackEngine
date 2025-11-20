@@ -124,6 +124,10 @@ public:
 		depth = j["depth"].get<int>();
 	}
 
+	virtual void writeBin(std::ofstream& bin, GMRoom* room) {
+		
+	}
+
 	virtual bool write(json& j, const std::filesystem::path& path, GMRoom* room) {
 		j["name"] = name;
 		j["depth"] = depth;
@@ -473,7 +477,7 @@ public:
 		doWrite = true;
 		GMDirectoryResource::read(j, proj);
 		proj->managed["rooms"].push_back(name);
-		std::filesystem::path goalPath = proj->assetsPath / "rooms" / name / "data.json";
+		std::filesystem::path goalPath = proj->assetsPath / "rooms" / std::string(name + ".bin");
 		if (std::filesystem::exists(goalPath)) {
 			auto lastWrite = std::filesystem::last_write_time(goalPath);
 			auto lastWriteOrig = std::filesystem::last_write_time(directory / (name + ".yy"));
@@ -508,20 +512,27 @@ public:
 			return;
 		}
 
-		std::filesystem::path path = proj->assetsPath / "rooms" / name;
-		if (!std::filesystem::exists(path)) {
-			std::filesystem::create_directory(path);
-		}
-		else if (!std::filesystem::is_directory(path)) {
-			std::filesystem::remove(path);
-			std::filesystem::create_directory(path);
+		std::filesystem::path pathBin = proj->assetsPath / "rooms" / std::string(name + ".bin");
+		
+		std::ofstream binFile(pathBin, std::ios::out | std::ios::binary);
+		
+		// std::filesystem::path path = proj->assetsPath / "rooms" / std::string(name + ".json");
+		// json j;
+		// j["name"] = name;
+
+		int len = name.size();
+		int layerCount = layers.size();
+		binFile.write(reinterpret_cast<const char*>(&settings.width), sizeof(settings.width));
+		binFile.write(reinterpret_cast<const char*>(&settings.height), sizeof(settings.height));
+		binFile.write(reinterpret_cast<const char*>(&layerCount), sizeof(layerCount));
+		binFile.write(reinterpret_cast<const char*>(&len), sizeof(len));
+		binFile.write(name.c_str(), name.size());
+		for (int i = 0; i < layerCount; ++i) {
+			auto& layer = layers[i];
+			layer->writeBin(binFile, this);
 		}
 
-		for (const auto& entry : std::filesystem::directory_iterator(path))
-			std::filesystem::remove_all(entry.path());
-
-		json j;
-		j["name"] = name;
+		/*
 		j["room_settings"] = {
 			{ "width", settings.width },
 			{ "height", settings.height }
@@ -535,8 +546,11 @@ public:
 			}
 		}
 
-		std::ofstream o(path / ("data.json"));
-		o << std::setw(4) << j << std::endl;
+		std::ofstream o(path);
+		o << j << std::endl;
+		*/
+
+		binFile.close();
 	}
 };
 
@@ -586,6 +600,31 @@ public:
 			decompressTiles(compData);
 		}
 
+	}
+	void writeBin(std::ofstream& bin, GMRoom* room) override {
+		std::string type = "tiles";
+		int typeLen = type.size();
+		bin.write(reinterpret_cast<const char*>(&typeLen), sizeof(typeLen));
+		bin.write(type.c_str(), type.size());
+
+		int nameLen = name.size();
+		bin.write(reinterpret_cast<const char*>(&nameLen), sizeof(nameLen));
+		bin.write(name.c_str(), name.size());
+
+		bin.write(reinterpret_cast<const char*>(&depth), sizeof(depth));
+
+		bin.write(reinterpret_cast<const char*>(&visible), sizeof(visible));
+		bin.write(reinterpret_cast<const char*>(&compressed), sizeof(compressed));
+		bin.write(reinterpret_cast<const char*>(&serializeWidth), sizeof(serializeWidth));
+		bin.write(reinterpret_cast<const char*>(&serializeHeight), sizeof(serializeHeight));
+
+		size_t tileSize = tileData.size();
+		bin.write(reinterpret_cast<const char*>(&tileSize), sizeof(tileSize));
+		bin.write((char*)&tileData[0], tileData.size() * sizeof(int32_t));
+
+		int tilesetLen = tileset.size();
+		bin.write(reinterpret_cast<const char*>(&tilesetLen), sizeof(tilesetLen));
+		bin.write(tileset.c_str(), tileset.size());
 	}
 	bool write(json& j, const std::filesystem::path& path, GMRoom* room) override {
 		GMRLayer::write(j, path, room);
@@ -659,6 +698,135 @@ public:
 		}
 	}
 
+	void writeBin(std::ofstream& bin, GMRoom* room) override {
+		std::string type = "objects";
+		int typeLen = type.size();
+		bin.write(reinterpret_cast<const char*>(&typeLen), sizeof(typeLen));
+		bin.write(type.c_str(), type.size());
+
+		int nameLen = name.size();
+		bin.write(reinterpret_cast<const char*>(&nameLen), sizeof(nameLen));
+		bin.write(name.c_str(), name.size());
+
+		bin.write(reinterpret_cast<const char*>(&depth), sizeof(depth));
+		bin.write(reinterpret_cast<const char*>(&visible), sizeof(visible));
+
+		size_t instanceCount = instances.size();
+
+		std::unordered_map<std::string, int> instIntMap {};
+		std::vector<std::string> intInstMap;
+		int num = 0;
+		for (int i = 0; i < instanceCount; ++i) {
+			auto& inst = instances[i];
+			if (instIntMap.find(inst->object) == instIntMap.end()) {
+				intInstMap.push_back(inst->object);
+				instIntMap[inst->object] = num++;
+			}
+		}
+
+		int typeCount = instIntMap.size();
+		bin.write((char*)&typeCount, sizeof(typeCount));
+		for (auto& name : intInstMap) {
+			int nameLen = name.size();
+			bin.write(reinterpret_cast<const char*>(&nameLen), sizeof(nameLen));
+			bin.write(name.c_str(), nameLen);
+		}
+
+		bin.write((char*)&instanceCount, sizeof(instanceCount));
+		for (int i = 0; i < instanceCount; ++i) {
+			auto& inst = instances[i];
+
+			bin.write(reinterpret_cast<const char*>(&instIntMap[inst->object]), sizeof(instIntMap[inst->object]));
+			bin.write(reinterpret_cast<const char*>(&inst->x), sizeof(inst->x));
+			bin.write(reinterpret_cast<const char*>(&inst->y), sizeof(inst->y));
+			
+			bool writeAdvanced = true;
+			if (inst->rotation == 0 && inst->imageIndex == 0 && inst->imageSpeed == 1.0f && inst->scaleX == 1 && inst->scaleY == 1 && inst->color.value[0] == 255 && inst->color.value[1] == 255 && inst->color.value[2] == 255 && inst->color.value[3] == 255) {
+				writeAdvanced = false;
+			}
+			bin.write(reinterpret_cast<const char*>(&writeAdvanced), sizeof(writeAdvanced));
+			if (writeAdvanced) {
+				bin.write(reinterpret_cast<const char*>(&inst->rotation), sizeof(inst->rotation));
+				bin.write(reinterpret_cast<const char*>(&inst->imageIndex), sizeof(inst->imageIndex));
+				bin.write(reinterpret_cast<const char*>(&inst->imageSpeed), sizeof(inst->imageSpeed));
+				bin.write(reinterpret_cast<const char*>(&inst->scaleX), sizeof(inst->scaleX));
+				bin.write(reinterpret_cast<const char*>(&inst->scaleY), sizeof(inst->scaleY));
+				bin.write((char*)inst->color.value, 4);
+			}
+
+			int propertyCount = inst->properties.size();
+			bin.write(reinterpret_cast<const char*>(&propertyCount), sizeof(propertyCount));
+			for (auto& it : inst->properties) {
+				for (auto& [k, v] : it.items()) {
+					std::string propName = k;
+					int propNameSize = propName.size();
+					bin.write(reinterpret_cast<const char*>(&propNameSize), sizeof(propNameSize));
+					bin.write(propName.c_str(), propName.size());
+
+					if (v.is_number_float()) {
+						uint8_t type = 0;
+						bin.write(reinterpret_cast<const char*>(&type), sizeof(type));
+						float val = v.get<float>();
+						bin.write(reinterpret_cast<const char*>(&val), sizeof(val));
+					}
+					else if (v.is_number()) {
+						uint8_t type = 1;
+						bin.write(reinterpret_cast<const char*>(&type), sizeof(type));
+						int val = v.get<int>();
+						bin.write(reinterpret_cast<const char*>(&val), sizeof(val));
+					}
+					else if (v.is_boolean()) {
+						uint8_t type = 2;
+						bin.write(reinterpret_cast<const char*>(&type), sizeof(type));
+						bool val = v.get<bool>();
+						bin.write(reinterpret_cast<const char*>(&val), sizeof(val));
+					}
+					else {
+						uint8_t type = 3;
+						bin.write(reinterpret_cast<const char*>(&type), sizeof(type));
+
+						std::string val = v.get<std::string>();
+						int valSize = val.size();
+						bin.write(reinterpret_cast<const char*>(&valSize), sizeof(valSize));
+						bin.write(val.c_str(), valSize);
+					}
+				}
+			}
+			/*
+			for (auto& p : j["properties"]) {
+			json object = json::object();
+			object["name"] = p["name"];
+			if (p.contains("resource")) {
+				if (p["resource"].contains("path")) {
+					object["value"] = p["resource"]["name"];
+					std::string dir = p["resource"]["path"].get<std::string>();
+					dir.erase(dir.find_first_of("/"));
+					object["directory"] = dir;
+				}
+			}
+			else if (p.find("value") != p.end()) {
+				int t = p["varType"];
+				object["type"] = t;
+				if (t == 0) {
+					object["value"] = std::stof(p["value"].get<std::string>());
+				}
+				else if (t == 1) {
+					object["value"] = std::stoi(p["value"].get<std::string>());
+				}
+				else if (t == 3) {
+					object["value"] = (p["value"] == "true" || p["value"] == "True") ? true : false;
+				}
+				else {
+					object["value"] = p["value"].get<std::string>();
+				}
+			}
+			properties.push_back(object);
+		}
+			
+			*/
+		}
+	}
+
 	bool write(json& j, const std::filesystem::path& path, GMRoom* room) override {
 		if (instances.empty()) {
 			return false;
@@ -692,33 +860,6 @@ public:
 			}
 			o["color"] = { i->color.value[0], i->color.value[1], i->color.value[2], i->color.value[3] };
 			instanceArr.push_back(o);
-
-			/*
-			if (i->hasCreationCode) {
-				std::filesystem::path cc = room->directory / std::string("InstanceCreationCode_" + i->uuid + ".gml");
-
-				std::ifstream file(cc);
-				std::string s;
-				std::vector<std::string> lines;
-				lines.emplace_back("local instance = ...");
-				lines.emplace_back("function instance:creation_code()");
-
-				while (getline(file, s)) {
-					s.insert(0, "\t");
-					lines.push_back(s);
-				}
-
-				std::filesystem::path output = path / std::string(i->uuid + "_cc.lua");
-				if (std::filesystem::exists(output)) {
-					std::filesystem::remove(output);
-				}
-				lines.emplace_back("end");
-				std::ofstream o(output);
-				for (auto& l : lines) {
-					o << l << std::endl;
-				}
-			}
-			*/
 		}
 		return true;
 	}
@@ -749,6 +890,34 @@ public:
 		}
 		else {
 			sprite = j["spriteId"]["name"];
+		}
+	}
+
+	void writeBin(std::ofstream& bin, GMRoom* room) override {
+		std::string type = "background";
+		int typeLen = type.size();
+		bin.write(reinterpret_cast<const char*>(&typeLen), sizeof(typeLen));
+		bin.write(type.c_str(), type.size());
+
+		int nameLen = name.size();
+		bin.write(reinterpret_cast<const char*>(&nameLen), sizeof(nameLen));
+		bin.write(name.c_str(), name.size());
+
+		bin.write(reinterpret_cast<const char*>(&depth), sizeof(depth));
+		bin.write(reinterpret_cast<const char*>(&visible), sizeof(visible));
+		bin.write(reinterpret_cast<const char*>(&tiledX), sizeof(tiledX));
+		bin.write(reinterpret_cast<const char*>(&tiledY), sizeof(tiledY));
+		bin.write(reinterpret_cast<const char*>(&speedX), sizeof(speedX));
+		bin.write(reinterpret_cast<const char*>(&speedY), sizeof(speedY));
+		bin.write(reinterpret_cast<const char*>(&x), sizeof(x));
+		bin.write(reinterpret_cast<const char*>(&y), sizeof(y));
+		bin.write((char*)&color.value[0], 4);
+		bool hasSprite = !sprite.empty();
+		bin.write(reinterpret_cast<const char*>(&hasSprite), sizeof(hasSprite));
+		if (hasSprite) {
+			int spriteNameLen = sprite.size();
+			bin.write(reinterpret_cast<const char*>(&spriteNameLen), sizeof(spriteNameLen));
+			bin.write(sprite.c_str(), sprite.size());
 		}
 	}
 
@@ -850,7 +1019,7 @@ void GameMakerProject::parse() {
 		j[k] = v;
 	}
 	std::ofstream managedObjects(assetsPath / "assets.json");
-	managedObjects << std::setw(4) << j;
+	managedObjects << j;
 
 	auto end = std::chrono::high_resolution_clock::now();
 

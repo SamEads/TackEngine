@@ -163,24 +163,30 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		it->second->sound->setPlayingOffset(sf::seconds(position));
 	};
 
+    lua["sound"]["stop_all"] = [&]() {
+		for (auto& it : buffers) {
+			for (auto& it2 : it.second.instances) {
+				it2.second->sound->stop();
+			}
+		}
+	};
+
     lua["sound"]["stop"] = [&](sol::object sound) {
 		if (sound.is<SoundAsset>()) {
 			auto& asset = sound.as<SoundAsset>();
-			auto& bufs = buffers[asset.name];
-			for (auto& [k, i] : bufs.instances) {
-				i->sound->setVolume(i->sound->getVolume() * 0.05f);
-				std::lock_guard<std::mutex> lock(mutex);
-				unloading.emplace_back(std::move(i->sound));
+			auto buf = buffers.find(asset.name);
+			if (buf != buffers.end()) {
+				for (auto& [k, i] : buf->second.instances) {
+					i->sound->stop();
+				}
+				buf->second.instances.clear();
 			}
-			bufs.instances.clear();
 		}
 		else if (sound.is<SoundInstanceReference>()) {
 			auto& ref = sound.as<SoundInstanceReference>();
 			auto it = ref.buffer->instances.find(ref.id);
 			if (it != ref.buffer->instances.end()) {
 				it->second->sound->stop();
-				// std::lock_guard<std::mutex> lock(mutex);
-				// unloading.emplace_back(std::move(it->second->sound));
 				ref.buffer->instances.erase(it);
 			}
 		}
@@ -193,6 +199,20 @@ void SoundManager::update() {
 		{
 			std::lock_guard<std::mutex> lock(mutex);
 			count = unloading.size();
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			for (auto& [k, v] : buffers) {
+				for (auto it = v.instances.begin(); it != v.instances.end();) {
+					if (it->second->sound->getPlayingOffset() >= v.buffer.getDuration() ||
+						it->second->sound->getStatus() == sf::Sound::Status::Stopped) {
+						it = v.instances.erase(it);
+						continue;
+					}
+					++it;
+				}
+			}
 		}
 		
 		if (count > 0) {
@@ -229,6 +249,11 @@ void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& a
     };
     lua["music"]["stop"] = [&]() {
 		music.stop();
+    };
+	lua["music"]["unpause"] = [&]() {
+		if (music.getStatus() == sf::Music::Status::Paused) {
+			music.play();
+		}
     };
     lua["music"]["pause"] = [&]() {
 		music.pause();

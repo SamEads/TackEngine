@@ -51,6 +51,7 @@ public:
 
 class MusicManager {
 public:
+	bool paused = false;
 	float volume;
 	sf::Music music;
 	SoundAsset* asset;

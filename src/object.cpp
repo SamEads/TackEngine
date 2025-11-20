@@ -127,9 +127,9 @@ void Object::draw(Room *room, float alpha) {
 
     if (!spriteIndex) return;
     
-	float interpX = lerp(xPrev, x, alpha);
-	float interpY = lerp(yPrev, y, alpha);
-	spriteIndex->draw(*Game::get().currentRenderer, { interpX, interpY }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
+	float interpX = lerp(xPrevRender, x, alpha);
+	float interpY = lerp(yPrevRender, y, alpha);
+	spriteIndex->draw(*Game::get().getRenderTarget(), { interpX, interpY }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
 }
 
 void Object::beginDraw(Room *room, float alpha) {
@@ -187,7 +187,7 @@ static sol::object ObjectCreate(
     // Run script for object
     auto it = objectScriptPaths.find(identifier);
     if (it != objectScriptPaths.end()) {
-        auto res = lua.safe_script_file(it->second.string());
+        auto res = LuaScript(lua, it->second);
         if (!res.valid()) {
             sol::error e = res;
             std::cout << e.what() << "\n";
@@ -320,35 +320,56 @@ std::unique_ptr<Object> ObjectManager::make(sol::state &lua, BaseObject *baseObj
     return copied;
 }
 
+static inline float w_bb_left(const Object::Reference& r) { return r.object->bboxLeft(); }
+static inline float w_bb_right(const Object::Reference& r) { return r.object->bboxRight(); }
+static inline float w_bb_top(const Object::Reference& r) { return r.object->bboxTop(); }
+static inline float w_bb_bottom(const Object::Reference& r) { return r.object->bboxBottom(); }
+static inline void w_force_x(const Object::Reference& r, float x) {
+    r.object->xPrevRender = r.object->xPrev = r.object->x = x;
+}
+static inline void w_force_y(const Object::Reference& r, float y) {
+    r.object->yPrevRender = r.object->yPrev = r.object->y = y;
+}
+static inline bool w_extends(const Object::Reference& r, BaseObject* base) { return r.object->extends(base); }
+
+static inline sol::object w_get(Object::Reference& r, const std::string& k) { return r.table[k]; }
+static inline void w_set(Object::Reference& r, const std::string& k, sol::object v) { r.table[k] = v; }
+
+#define WRAPPER_GET(lval, val, type) \
+static inline type wGet_##lval(const Object::Reference& r) { return r.object->val; } \
+
+#define WRAPPER_GET_SET(lval, val, type) \
+static inline type wGet_##lval(const Object::Reference& r) { return r.object->val; } \
+static inline void wSet_##lval(Object::Reference& r, type v) { r.object->val = v; }
+WRAPPER_GET_SET(x, x, float)
+WRAPPER_GET_SET(y, y, float)
+WRAPPER_GET_SET(hspeed, xspd, float)
+WRAPPER_GET_SET(vspeed, yspd, float)
+WRAPPER_GET_SET(sprite_index, spriteIndex, SpriteIndex*)
+WRAPPER_GET_SET(mask_index, maskIndex, SpriteIndex*)
+WRAPPER_GET_SET(image_index, imageIndex, float)
+WRAPPER_GET_SET(image_speed, imageSpeed, float)
+WRAPPER_GET_SET(increment_image_speed, incrementImageSpeed, bool)
+WRAPPER_GET_SET(image_angle, imageAngle, float)
+WRAPPER_GET_SET(image_xscale, xScale, float)
+WRAPPER_GET_SET(image_yscale, yScale, float)
+WRAPPER_GET_SET(depth, depth, int)
+WRAPPER_GET_SET(visible, visible, bool)
+WRAPPER_GET_SET(active, active, bool)
+
+WRAPPER_GET(super, parent, BaseObject*)
+WRAPPER_GET(object_index, self, BaseObject*)
+WRAPPER_GET(x_previous, xPrev, float)
+WRAPPER_GET(y_previous, yPrev, float)
+WRAPPER_GET(x_previous_render, xPrevRender, float)
+WRAPPER_GET(y_previous_render, yPrevRender, float)
+
 void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
-    lua.new_usertype<Object>(
-        "Object",       sol::no_constructor,
-        "x",            &Object::x,
-        "y",            &Object::y,
-        "hspeed",       &Object::xspd,
-        "vspeed",       &Object::yspd,
-        "sprite_index", &Object::spriteIndex,
-        "mask_index",   &Object::maskIndex,
-        "image_index",  &Object::imageIndex,
-        "image_speed",  &Object::imageSpeed,
-        "increment_image_speed",  &Object::incrementImageSpeed,
-        "image_angle",  &Object::imageAngle,
-        "image_xscale", &Object::xScale,
-        "image_yscale", &Object::yScale,
-        "xprevious",    sol::readonly(&Object::xPrev),
-        "yprevious",    sol::readonly(&Object::yPrev),
+    auto objtype = lua.new_usertype<Object>(
+        "Object", sol::no_constructor,
+
         "object_index", sol::readonly(&Object::self),
-
-        "bbox_left",    sol::readonly_property(&Object::bboxLeft),
-        "bbox_right",   sol::readonly_property(&Object::bboxRight),
-        "bbox_bottom",  sol::readonly_property(&Object::bboxBottom),
-        "bbox_top",     sol::readonly_property(&Object::bboxTop),
-        "bbox_width",     sol::readonly_property(&Object::bboxWidth),
-        "bbox_height",     sol::readonly_property(&Object::bboxHeight),
-
-        "depth",        &Object::depth,
-        "visible",      &Object::visible,
-        "active",       &Object::active,
+        "super",        sol::readonly(&Object::parent),
 
         sol::meta_function::index,      &Object::getDyn,
         sol::meta_function::new_index,  &Object::setDyn
@@ -356,36 +377,57 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
 
     lua.new_usertype<BaseObject>(
         "BaseObject",       sol::no_constructor,
+        
         sol::meta_function::index,      &BaseObject::getDyn,
         sol::meta_function::new_index,  &BaseObject::setDyn,
+
         sol::base_classes, sol::bases<Object>()
     );
 
-    lua.new_usertype<Object::Reference>(
+    auto ref = lua.new_usertype<Object::Reference>(
         "ObjectReference", sol::no_constructor,
         
+        // fields
+        "x",                        sol::property(wGet_x, wSet_x),
+        "y",                        sol::property(wGet_y, wSet_y),
+        "hspeed",                   sol::property(wGet_hspeed, wSet_hspeed),
+        "vspeed",                   sol::property(wGet_vspeed, wSet_vspeed),
+        "sprite_index",             sol::property(wGet_sprite_index, wSet_sprite_index),
+        "mask_index",               sol::property(wGet_mask_index, wSet_mask_index),
+        "image_index",              sol::property(wGet_image_index, wSet_image_index),
+        "image_speed",              sol::property(wGet_image_speed, wSet_image_speed),
+        "increment_image_speed",    sol::property(wGet_increment_image_speed, wSet_increment_image_speed),
+        "image_angle",              sol::property(wGet_image_angle, wSet_image_angle),
+        "image_xscale",             sol::property(wGet_image_xscale, wSet_image_xscale),
+        "image_yscale",             sol::property(wGet_image_yscale, wSet_image_yscale),
+        "depth",                    sol::property(wGet_depth, wSet_depth),
+        "active",                   sol::property(wGet_active, wSet_active),
+        "visible",                  sol::property(wGet_visible, wSet_visible),
+
+        "object_index",             sol::readonly_property(wGet_object_index),
+        "super",                    sol::readonly_property(wGet_super),
+        "x_previous",               sol::readonly_property(wGet_x_previous),
+        "y_previous",               sol::readonly_property(wGet_y_previous),
+        "x_previous_render",        sol::readonly_property(wGet_x_previous_render),
+        "y_previous_render",        sol::readonly_property(wGet_y_previous_render),
+
+        // functions
+        "bbox_left",    w_bb_left,
+        "bbox_right",   w_bb_right,
+        "bbox_top",     w_bb_top,
+        "bbox_bottom",  w_bb_bottom,
+        "force_x",      w_force_x,
+        "force_y",      w_force_y,
+        "extends",      w_extends,
         "force_position", [](const Object::Reference& caller, float x, float y) {
-            caller.object->forcePosition(x, y);
+            w_force_x(caller, x);
+            w_force_y(caller, y);
         },
-        "force_x", [](const Object::Reference& caller, float x) {
-            caller.object->x = x;
-            caller.object->xPrev = x;
-        },
-        "force_y", [](const Object::Reference& caller, float y) {
-            caller.object->y = y;
-            caller.object->yPrev = y;
-        },
-        "extends", [](const Object::Reference& caller, BaseObject* base) {
-            return caller.object->extends(base);
-        },
+        
+        sol::meta_function::index,      w_get,
+        sol::meta_function::new_index,  w_set,
         sol::meta_function::equal_to, [](const Object::Reference& a, const Object::Reference& b) {
             return (a.object == b.object);
-        },
-        sol::meta_function::index, [](Object::Reference& self, const std::string& key, sol::this_state s) -> sol::object {
-            return self.table[key];
-        },
-        sol::meta_function::new_index, [](Object::Reference& self, const std::string& key, sol::object value) {
-            self.table[key] = value;
         }
     );
 
@@ -411,7 +453,7 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         if (!it.is_regular_file()) {
             continue;
         }
-        std::string identifier = it.path().filename().replace_extension("").string(); // okay then
+        std::string identifier = it.path().filename().replace_extension("").string();
         ObjectCreateRecursive(identifier, lua, assets, scriptPaths);
     }
 

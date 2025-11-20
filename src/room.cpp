@@ -4,53 +4,119 @@
 #include "tileset.h"
 #include "vendor/json.hpp"
 
-using namespace nlohmann;
+class Camera {
+public:
+    float x, y;
+    float width, height;
+    float xPrev, yPrev;
+    float getX () const { return x; }
+    float getY () const { return y; }
+    void setX ( float x ) {
+        this->x = x;
+    }
+    void setY ( float y ) {
+        this->y = y;
+    }
+    float getXPrev () const { return xPrev; }
+    float getYPrev () const { return yPrev; }
+};
 
-sol::function drawAll;
+Background* RoomGetBG(Room* room, const std::string& str) {
+    for (auto& it : room->backgrounds) {
+        if (it->name == str) {
+            return it;
+        }
+    }
+    return nullptr;
+}
+
+Background* RoomGetBGList(Room* room) {
+    return nullptr;
+}
+
+Tilemap* RoomGetTilemap(Room* room, const std::string& str) {
+    for (auto& it : room->tilemaps) {
+        if (it->name == str) {
+            return it;
+        }
+    }
+    return nullptr;
+}
+
+Tilemap* RoomGetTilemapList(Room* room) {
+    return nullptr;
+}
+
 void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
     Tilemap::initializeLua(lua);
-
     lua.new_usertype<Background>(
         "Background", sol::no_constructor,
         "visible", &Background::visible,
         "depth", &Background::depth,
-        "sprite_index", &Background::spriteIndex
+        "sprite_index", &Background::spriteIndex,
+        "set_color", [&](Background* bg, sol::table color) {
+            bg->color = MakeColor(color);
+        },
+        "get_name", [&](Background* bg) {
+            return bg->name;
+        },
+        "get_color", [&](Background* bg) {
+            return lua.create_table_with((float)bg->color.r, (float)bg->color.g, (float)bg->color.b, (float)bg->color.a);
+        }
+    );
+
+    lua["room_create"] = [&](RoomReference* room) {
+        std::unique_ptr<Room> r;
+        if (room == nullptr) {
+            r = std::make_unique<Room>(lua);
+        }
+        else {
+            r = std::make_unique<Room>(lua, *room);
+        }
+        r->load();
+        return std::move(r);
+    };
+
+    lua.new_usertype<Camera>(
+        "Camera", sol::no_constructor,
+
+        "get_x", &Camera::getX,                 "get_y", &Camera::getY,
+        "get_x_previous", &Camera::getXPrev,    "get_y_previous", &Camera::getYPrev,
+        "get_width", &Camera::getWidth,         "get_height", &Camera::getHeight,
+
+        "set_x", &Camera::setX,                 "set_y", &Camera::setY,
+        
+        "teleport", &Camera::teleport
     );
 
     lua.new_usertype<Room>(
         "Room", sol::no_constructor,
 
         // Room info
+        "view",   &Room::camera,
         "width",    sol::readonly(&Room::width),
         "height",   sol::readonly(&Room::height),
-        "camera_x", sol::property(&Room::getCameraX, &Room::setCameraX),
-        "camera_xprevious", sol::readonly(&Room::cameraPrevX),
-        "camera_yprevious", sol::readonly(&Room::cameraPrevY),
-        "camera_y",     sol::property(&Room::getCameraY, &Room::setCameraY),
-        "camera_width",     sol::readonly(&Room::cameraWidth),
-        "camera_height",    sol::readonly(&Room::cameraHeight),
 
-        // Objects & instances
-        "instance_create", &Room::instanceCreateScript,
-        "instance_exists", &Room::instanceExistsScript,
-        "instance_destroy", &Room::instanceDestroyScript,
-        "object_count", &Room::objectCount,
-        "object_get", &Room::getObject,
-        "object_exists", &Room::objectExists,
-        "object_get_list", &Room::objectGetList,
-        "object_destroy", &Room::objectDestroy,
+        "background_get",           RoomGetBG,
+        "background_list_create",   RoomGetBGList,
+        "tilemap_get",              RoomGetTilemap,
+        "tilemap_list_create",      RoomGetTilemapList,
+
+        "instance_create",          &Room::instanceCreateScript,
+        "instance_exists",          &Room::instanceExistsScript,    // Supports instances & objects as params
+        "instance_destroy",         &Room::instanceDestroyScript,   // Supports instances & objects as params
+        "instance_get_first",       &Room::getObject,               // Object param only
+        "instance_list_create",     &Room::objectGetList,           // Object param only
+        "instance_count",           &Room::objectCount,             // Object param only
+        "instance_rect",            &Room::collisionRectangleScript,    // Self first argument
+        "instances_rect",           &Room::collisionRectangleList,      // Self first argument
+
         "object_deactivate", &Room::deactivateObject,
         "object_activate", &Room::activateObject,
         "object_activate_region", &Room::activateObjectRegion,
 
-        // Layers
-        "tile_layer_get",       &Room::getTileLayer,
-        "background_layer_get", &Room::getBackgroundLayer,
-
-        // Collisions
-        "instance_place",           &Room::instancePlaceScript,
-        "collision_rectangle",      &Room::collisionRectangleScript,
-        "collision_rectangle_list", &Room::collisionRectangleList,
+        "step", &Room::timestep,
+        "draw", &Room::draw,
 
         "render_x", &Room::renderCameraX,
         "render_y", &Room::renderCameraY,
@@ -61,12 +127,12 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
     );
 
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "rooms")) {
-        if (!it.is_directory()) {
+        if (!it.is_regular_file() || it.path().extension() != ".bin") {
             continue;
         }
 
         std::filesystem::path p = it.path();
-        std::string identifier = p.filename().string();
+        std::string identifier = p.filename().replace_extension("").string();
 
         RoomReference& ref = Game::get().rooms[identifier];
         ref.name = identifier;
@@ -74,136 +140,140 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
 
         lua[identifier] = ref;
     }
-
-    drawAll = lua.script(R"(
-return function(drawables, room, alpha)
-    local n = #drawables
-    for i = 1, n do
-        local d = drawables[i]
-        if d.draw then d:draw(room, alpha) end
-    end
-end
-    )");
 }
 
+static int count;
 Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
     roomReference = &room;
+    camera.room = this;
+    count++;
+}
+
+Room::Room(sol::state &lua) : lua(lua) {
+    roomReference = nullptr;
+    camera.room = this;
+    count++;
+}
+
+Room::~Room() {
+    --count;
 }
 
 void Room::load() {
-    auto jsonPath = roomReference->p / "data.json";
-    std::ifstream i(jsonPath);
-    json j = json::parse(i);
+    using namespace nlohmann;
 
+    auto& game = Game::get();
     auto& objMgr = ObjectManager::get();
 
-    width = j["room_settings"]["width"];
-    height = j["room_settings"]["height"];
+    camera.width = game.canvasWidth;
+    camera.height = game.canvasHeight;
 
-    cameraWidth = 256;
-    cameraHeight = 224;
+    if (roomReference == nullptr) {
+        return;
+    }
 
-    for (auto& l : j["layers"]) {
-        std::string type = l["type"].get<std::string>();
-        int depth = l["depth"];
+    auto jsonPath = roomReference->p;
+    auto binPath = jsonPath.replace_extension(".bin");
+    std::ifstream in(binPath, std::ios::binary);
 
-        if (type == "objects") {
-            for (auto& i : l["objects"]) {
-                std::string objectIndex = i["object"];
-                float x = i["x"];
-                float y = i["y"];
-                BaseObject* base = objMgr.baseClasses[objectIndex].objectPtr->get();
-                auto obj = instanceCreate(x, y, depth, base);
-                obj->xScale = i.value("scale_x", 1.0f);
-                obj->yScale = i.value("scale_y", 1.0f);
-                obj->imageAngle = i.value("angle", 0.0f);
-                obj->imageIndex = i.value("image_index", 0.0f);
-                obj->imageSpeedMod = i.value("image_speed", 1.0f);
-                if (i["properties"].size() > 0) {
-                    bool hadProperties = false;
-                    if (obj->kvp.find("properties") == obj->kvp.end()) {
-                        obj->setDyn("properties", sol::table(lua, sol::create));
-                    }
-                    sol::table props = obj->getDyn("properties");
-                    auto& origProps = obj->self->rawProperties;
-                    for (auto& prop : i["properties"]) {
-                        for (auto& [k, v] : prop.items()) {
-                            auto& origProp = origProps.find(k);
-                            if (origProp == origProps.end()) {
-                                continue;
-                            }
-                            props[k] = FieldCreateFromProperty(k, origProp->second.first, v, lua);
-                        }
-                    }
-                }
+    int settingsWidth, settingsHeight;
+    in.read(reinterpret_cast<char*>(&width), sizeof(width));
+    in.read(reinterpret_cast<char*>(&height), sizeof(height));
 
-                obj->xPrev = obj->x;
-                obj->yPrev = obj->y;
-            }
-        }
+    int layerCount;
+    in.read(reinterpret_cast<char*>(&layerCount), sizeof(layerCount));
+
+    auto readstr = [&]() {
+        int strLen;
+        in.read(reinterpret_cast<char*>(&strLen), sizeof(strLen));
+
+        std::string nameStr;
+        nameStr.resize(strLen);
+
+        nameStr[strLen] = '\0';
+        in.read(&nameStr[0], strLen);
+
+        return nameStr;
+    };
+
+    std::string namestr = readstr();
+
+    for (int i = 0; i < layerCount; ++i) {
+        std::string type = readstr();
+
+        std::string name = readstr();
+
+        int depth;
+        bool visible;
+
+        in.read(reinterpret_cast<char*>(&depth), sizeof(depth));
+        in.read(reinterpret_cast<char*>(&visible), sizeof(visible));
 
         if (type == "background") {
             std::unique_ptr<Background> bg = std::make_unique<Background>(lua);
 
-            bg->name = l["name"];
-            
-            bg->tiledX = l["tiled_x"];
-            bg->tiledY = l["tiled_y"];
-
-            bg->xspd = l["speed_x"];
-            bg->yspd = l["speed_y"];
-            
-            bg->x = l["x"];
-            bg->y = l["y"];
-
-            bg->visible = l["visible"];
+            bg->name = name;
+            bg->visible = visible;
             bg->depth = depth;
-            
-            if (!l["sprite"].is_null()) {
-                bg->spriteIndex = &SpriteManager::get().sprites[l["sprite"]];
+
+            in.read(reinterpret_cast<char*>(&bg->tiledX), sizeof(bg->tiledX));
+            in.read(reinterpret_cast<char*>(&bg->tiledY), sizeof(bg->tiledY));
+            in.read(reinterpret_cast<char*>(&bg->xspd), sizeof(bg->xspd));
+            in.read(reinterpret_cast<char*>(&bg->yspd), sizeof(bg->yspd));
+            in.read(reinterpret_cast<char*>(&bg->x), sizeof(bg->x));
+            in.read(reinterpret_cast<char*>(&bg->y), sizeof(bg->y));
+
+            in.read(reinterpret_cast<char*>(&bg->color.r), sizeof(char) * 4);
+
+            bool hasSprite;
+            in.read(reinterpret_cast<char*>(&hasSprite), sizeof(hasSprite));
+            if (hasSprite) {
+                bg->spriteIndex = &SpriteManager::get().sprites[readstr()];
             }
-            
-            auto& col = l["color"].get<std::vector<uint8_t>>();
-            if (col.size() == 4) {
-                bg->color = *((c_Color*)col.data());
-            }
-            
+
             bg->MyReference.id = currentId++;
             backgrounds.push_back(bg.get());
+            bg->vectorPos = instances.size() - 1;
             instances.push_back(std::move(bg));
         }
 
-        if (type == "tiles") {
+        else if (type == "tiles") {
             std::unique_ptr<Tilemap> map = std::make_unique<Tilemap>(lua);
-            
-            map->name = l["name"];
-
-            map->tileCountX = l["width"];
-            map->tileCountY = l["height"];
-
-            map->visible = l["visible"];
+            map->name = name;
             map->depth = depth;
+            map->visible = visible;
 
-            if (!l["compressed"]) {
-                map->tileData = l["tiles"].get<std::vector<unsigned int>>();
-            }
-            else {
-                auto compressed = l["tiles"].get<std::vector<int>>();
+            bool compressed;
+            in.read(reinterpret_cast<char*>(&compressed), sizeof(compressed));
+
+            int width, height;
+            in.read(reinterpret_cast<char*>(&map->tileCountX), sizeof(map->tileCountX));
+            in.read(reinterpret_cast<char*>(&map->tileCountY), sizeof(map->tileCountY));
+
+            if (compressed) {
+                size_t tileArrSize;
+                in.read(reinterpret_cast<char*>(&tileArrSize), sizeof(tileArrSize));
+
+                int32_t* tiles = new int32_t[tileArrSize];
+
+                in.read((char*)tiles, tileArrSize * sizeof(int32_t));
+
                 auto& decompressed = map->tileData;
 		        decompressed.reserve(map->tileCountX * map->tileCountY);
-                int size = compressed.size();
-                for (int i = 0; i < size;) {
-                    int value = compressed[i++];
+
+                int size = tileArrSize;
+                for (int j = 0; j < size;) {
+                    int value = tiles[j++];
 
                     // start a value train
                     if (value >= 0) {
                         while (true) {
                             // stay in bounds
-                            if (i >= size) {
+                            if (j >= size) {
                                 break;
                             }
 
-                            int nextValue = compressed[i++];
+                            int nextValue = tiles[j++];
 
                             if (nextValue >= 0) {
                                 decompressed.push_back(nextValue);
@@ -218,34 +288,141 @@ void Room::load() {
                     // Negative value is count
                     if (value < 0) {
                         // stay in bounds
-                        if (i >= size) {
+                        if (j >= size) {
                             break;
                         }
 
-                        int repeatValue = compressed[i++];
+                        int repeatValue = tiles[j++];
 
-                        for (int i = 0; i < -value; ++i) {
+                        for (int k = 0; k < -value; ++k) {
                             decompressed.push_back(repeatValue);
                         }
                     }
                 }
+
+                delete[] tiles;
             }
-            
-            map->tileset = &TilesetManager::get().tilesets[l["tileset"].get<std::string>()];
+            else {
+                size_t tileArrSize;
+                in.read(reinterpret_cast<char*>(&tileArrSize), sizeof(tileArrSize));
+
+                map->tileData.resize(tileArrSize);
+                unsigned int* ptr = map->tileData.data();
+
+                in.read((char*)ptr, tileArrSize * sizeof(int32_t));
+            }
+
+            std::string tilesetRes = readstr();
+
+            map->tileset = &TilesetManager::get().tilesets[tilesetRes];
 
             map->MyReference.id = currentId++;
             tilemaps.push_back(map.get());
+            map->vectorPos = instances.size() - 1;
             instances.push_back(std::move(map));
+        }
+
+        else if (type == "objects") {
+            int objectCount;
+            in.read(reinterpret_cast<char*>(&objectCount), sizeof(objectCount));
+
+            std::vector<std::string> vec;
+            vec.reserve(objectCount);
+            for (int i = 0; i < objectCount; ++i) {
+                vec.emplace_back(readstr());
+            }
+
+            size_t instanceCount;
+            in.read(reinterpret_cast<char*>(&instanceCount), sizeof(instanceCount));
+
+            for (int i = 0; i < instanceCount; ++i) {
+                int objNamePos;
+                in.read(reinterpret_cast<char*>(&objNamePos), sizeof(objNamePos));
+                std::string& name = vec[objNamePos];
+
+                float x;
+                in.read(reinterpret_cast<char*>(&x), sizeof(x));
+
+                float y;
+                in.read(reinterpret_cast<char*>(&y), sizeof(y));
+
+                BaseObject* base = objMgr.baseClasses[name].objectPtr->get();
+                auto obj = instanceCreate(x, y, depth, base);
+
+                bool readAdvanced = false;
+                in.read(reinterpret_cast<char*>(&readAdvanced), sizeof(readAdvanced));
+                if (readAdvanced) {
+                    float& rotation = obj->imageAngle;
+                    in.read(reinterpret_cast<char*>(&rotation), sizeof(rotation));
+
+                    float& imageIndex = obj->imageIndex;
+                    in.read(reinterpret_cast<char*>(&imageIndex), sizeof(imageIndex));
+
+                    float& imageSpeed = obj->imageSpeedMod;
+                    in.read(reinterpret_cast<char*>(&imageSpeed), sizeof(imageSpeed));
+
+                    float& scaleX = obj->xScale;
+                    in.read(reinterpret_cast<char*>(&scaleX), sizeof(scaleX));
+
+                    float& scaleY = obj->yScale;
+                    in.read(reinterpret_cast<char*>(&scaleY), sizeof(scaleY));
+
+                    uint8_t col[4];
+                    in.read((char*)col, sizeof(uint8_t) * 4);
+                }
+
+                int propertyCount;
+                in.read(reinterpret_cast<char*>(&propertyCount), sizeof(propertyCount));
+
+                if (propertyCount > 0) {
+                    if (obj->kvp.find("properties") == obj->kvp.end()) {
+                        obj->setDyn("properties", sol::table(lua, sol::create));
+                    }
+
+                    sol::table props = obj->getDyn("properties");
+                    for (int j = 0; j < propertyCount; ++j) {
+                        std::string key = readstr();
+
+                        uint8_t type;
+                        in.read(reinterpret_cast<char*>(&type), sizeof(type));
+
+                        if (type == 0) { // float
+                            float val;
+                            in.read(reinterpret_cast<char*>(&val), sizeof(val));
+                            props[key] = sol::make_object(lua, val);
+                        }
+                        else if (type == 1) { // int
+                            int val;
+                            in.read(reinterpret_cast<char*>(&val), sizeof(val));
+                            props[key] = sol::make_object(lua, val);
+                        }
+                        else if (type == 2) { // bool
+                            bool val;
+                            in.read(reinterpret_cast<char*>(&val), sizeof(val));
+                            props[key] = sol::make_object(lua, val);
+                        }
+                        else { // other
+                            std::string val = readstr();
+                            if (lua[val] != sol::lua_nil) {
+                                props[key] = lua[val];
+                            }
+                            else {
+                                props[key] = sol::make_object(lua, val);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     createAndRoomStartEvents();
 }
 
-// Room -> "Create"
+// Room ->      "Create"
 // Instances -> "Create"
-// Room -> Creation Code
-// Room -> "Room Start"
+// Room ->      Creation Code
+// Room ->      "Room Start"
 // Instances -> "Room Start"
 void Room::createAndRoomStartEvents() {
     auto& game = Game::get();
@@ -262,17 +439,19 @@ void Room::createAndRoomStartEvents() {
     updateQueue();
 
     // Room creation code specific to this room
-    lua["room"] = this;
-    std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(roomReference->name + ".lua");
-    if (std::filesystem::exists(roomScript)) {
-        auto result = lua.safe_script_file(roomScript.string());
-        if (!result.valid()) {
-            sol::error e = result;
-            std::cout << e.what() << "\n";
+    if (roomReference != nullptr) {
+        lua["room"] = this;
+        std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(roomReference->name + ".lua");
+        if (std::filesystem::exists(roomScript)) {
+            auto result = LuaScript(lua, roomScript);
+            if (!result.valid()) {
+                sol::error e = result;
+                std::cout << e.what() << "\n";
+            }
         }
+        lua["room"] = nullptr;
+        updateQueue();
     }
-    lua["room"] = nullptr;
-    updateQueue();
 
     auto start = kvp.find("room_start");
     if (start != kvp.end()) {
@@ -280,23 +459,25 @@ void Room::createAndRoomStartEvents() {
         updateQueue();
     }
 
-    updateQueue();
     for (auto& objUnique : instances) {
         objUnique->runScript("room_start", this);
     }
+    updateQueue();
 
-    cameraPrevX = cameraX;
-    cameraPrevY = cameraY;
+    camera.xPrev = camera.x;
+    camera.yPrev = camera.y;
 }
 
-void Room::update() {
-    cameraPrevX = cameraX;
-    cameraPrevY = cameraY;
+void Room::timestep() {
+    camera.xPrev = camera.x;
+    camera.yPrev = camera.y;
 
     for (auto& i : instances) {
         if (i->active) {
             i->xPrev = i->x;
             i->yPrev = i->y;
+            i->xPrevRender = i->x;
+            i->yPrevRender = i->y;
             if (i->incrementImageSpeed) {
                 i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
             }
@@ -329,24 +510,20 @@ void Room::update() {
 }
 
 void Room::setView(float cx, float cy) {
-    auto target = Game::get().currentRenderer;
+    auto target = Game::get().getRenderTarget();
 
-    sf::Vector2u gameSize = target->getSize();
-    sf::View view({ { 0, 0 }, { cameraWidth, cameraHeight } });
+    sf::View view({ { 0, 0 }, { camera.width, camera.height } });
 
-    view.setCenter({ cx + cameraWidth / 2.0f, cy + cameraHeight / 2.0f });
+    view.setCenter({ cx + camera.width / 2.0f, cy + camera.height / 2.0f });
     target->setView(view);
 
     renderCameraX = cx;
     renderCameraY = cy;
 }
 
-
 void Room::draw(float alpha) {
-    auto target = Game::get().currentRenderer;
-    setView(lerp(cameraPrevX, cameraX, alpha), lerp(cameraPrevY, cameraY, alpha));
-    
     drawables.clear();
+
     int count = 0;
     for (auto& i : instances) {
         if (i->visible && i->active && dynamic_cast<Tilemap*>(i.get())) {
@@ -380,6 +557,7 @@ void Room::draw(float alpha) {
         d->endDraw(this, alpha);
     }
 
+    auto target = Game::get().getRenderTarget();
     target->setView(target->getDefaultView());
 
     for (auto& d : drawables) {
@@ -388,20 +566,13 @@ void Room::draw(float alpha) {
     }
 }
 
-void Room::setCameraX(float val) {
-    cameraX = std::clamp(val, 0.0f, width - cameraWidth);
-}
-
-void Room::setCameraY(float val) {
-    cameraY = std::clamp(val, 0.0f, height - cameraHeight);
-}
-
 void Room::deactivateObject(sol::object object) {
     if (object.is<BaseObject*>()) {
         BaseObject* o = object.as<BaseObject*>();
         for (auto& i : ids) {
-            if (i.second->extends(o))
+            if (i.second->extends(o)) {
                 i.second->active = false;
+            }
         }
     }
     else {
@@ -460,13 +631,14 @@ void Background::draw(Room* room, float alpha) {
     float x = cx - 1;
     float y = cy - 1;
 
+    sf::Shader* shader = Game::get().currentShader;
     if (spriteIndex) {
         sf::Sprite* spr = spriteIndex->sprite.get();
         spr->setScale({ 1, 1 });
         spr->setOrigin({ 0, 0 });
         spr->setColor(color);
         spr->setRotation(sf::degrees(0));
-        spr->setColor(c_Color::White);
+        spr->setColor({ 255, 255, 255, 255 });
         float parallax = xspd;
         float parallaxY = yspd;
         float x = (cx * parallax) + this->x;
@@ -481,15 +653,15 @@ void Background::draw(Room* room, float alpha) {
             for (int j = -1; j <= 1; ++j) {
                 if (!tiledY && j != 0) continue;
                 spr->setPosition({ floorf(x) + (i * spriteIndex->width), floorf(y) + (j * spriteIndex->height) });
-                Game::get().currentRenderer->draw(*spr);
+                Game::get().getRenderTarget()->draw(*spr, shader);
             }
         }
     }
     else {
-        sf::RectangleShape rs({ room->cameraWidth + 2, room->cameraHeight + 2 });
+        sf::RectangleShape rs({ room->camera.width + 2, room->camera.height + 2 });
         rs.setTexture(&SpriteManager::get().whiteTexture);
         rs.setFillColor(color);
         rs.setPosition({ x, y });
-        Game::get().currentRenderer->draw(rs);
+        Game::get().getRenderTarget()->draw(rs, shader);
     }
 }

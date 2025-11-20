@@ -11,6 +11,7 @@ void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
             if (it.is_regular_file()) {
                 const auto& fontPath = it.path();
                 std::string fontName = fontPath.filename().replace_extension("").string();
+                std::cout << "Added font " << fontName << "\n";
                 auto& font = fonts[fontName];
                 font.isSpriteFont = false;
                 font.fontIndex = sf::Font(fontPath);
@@ -33,7 +34,7 @@ void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
     lua["font"]["draw"] = [&](float x, float y, Font* font, int size, int spacing, const std::string& string, sol::table color) {
         if (font->isSpriteFont) {
             auto& spriteIndex = font->spriteIndex;
-            sf::RenderTarget& currentRenderer = *Game::get().currentRenderer;
+            sf::RenderTarget& currentRenderer = *Game::get().getRenderTarget();
 
             float cx = 0, cy = 0;
             for (int i = 0; i < string.length(); ++i) {
@@ -54,7 +55,7 @@ void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
             t.setFillColor(MakeColor(color));
             t.setPosition({ x, y });
             t.setLetterSpacing(spacing);
-            Game::get().currentRenderer->draw(t);
+            Game::get().getRenderTarget()->draw(t);
         }
     };
 }

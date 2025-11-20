@@ -1,16 +1,19 @@
 #pragma once
 
-#include "graphics.h"
 #include "room.h"
 #include "util/profiler.h"
 #include "util/timer.h"
 
 class Game {
 public:
+    unsigned int canvasWidth = 640;
+    unsigned int canvasHeight = 480;
     Profiler profiler;
     sol::state lua;
     bool letterbox = true;
-    uint64_t roomId;
+    bool drawRoom = true;
+    bool switchRooms = false;
+    ObjectId roomId;
     std::unique_ptr<Room> room;
     std::unique_ptr<Room> queuedRoom;
     std::filesystem::path assetsFolder = "assets";
@@ -26,6 +29,7 @@ public:
     sf::RenderTarget* currentRenderer;
     std::unique_ptr<sf::RenderTexture> consoleRenderer;
     std::unique_ptr<sf::RenderWindow> window;
+    inline sf::RenderTarget* getRenderTarget() { return (currentRenderer == nullptr) ? window.get() : currentRenderer; }
     sf::Shader* currentShader;
 #endif
 
@@ -33,7 +37,7 @@ public:
         static Game game;
         return game;
     }
-    Room* queueRoom(const RoomReference& room);
+    Room* queueRoom(RoomReference* room);
     Room* getRoom();
     void initializeLua(sol::state& state, const std::filesystem::path& assets);
     void setKVP(const std::string& key, sol::main_object obj) {
