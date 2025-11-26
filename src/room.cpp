@@ -4,22 +4,14 @@
 #include "tileset.h"
 #include "vendor/json.hpp"
 
-class Camera {
-public:
-    float x, y;
-    float width, height;
-    float xPrev, yPrev;
-    float getX () const { return x; }
-    float getY () const { return y; }
-    void setX ( float x ) {
-        this->x = x;
-    }
-    void setY ( float y ) {
-        this->y = y;
-    }
-    float getXPrev () const { return xPrev; }
-    float getYPrev () const { return yPrev; }
-};
+Room::Room(sol::state& lua) : lua(lua) {
+    roomReference = nullptr;
+    camera.room = this;
+}
+
+Room::Room(sol::state& lua, RoomReference* data) : Room(lua) {
+    roomReference = data;
+}
 
 Background* RoomGetBG(Room* room, const std::string& str) {
     for (auto& it : room->backgrounds) {
@@ -30,9 +22,7 @@ Background* RoomGetBG(Room* room, const std::string& str) {
     return nullptr;
 }
 
-Background* RoomGetBGList(Room* room) {
-    return nullptr;
-}
+Background* RoomGetBGList(Room* room) { return nullptr; }
 
 Tilemap* RoomGetTilemap(Room* room, const std::string& str) {
     for (auto& it : room->tilemaps) {
@@ -43,11 +33,11 @@ Tilemap* RoomGetTilemap(Room* room, const std::string& str) {
     return nullptr;
 }
 
-Tilemap* RoomGetTilemapList(Room* room) {
-    return nullptr;
-}
+Tilemap* RoomGetTilemapList(Room* room) { return nullptr; }
 
 void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
+    sol::table engineEnv = lua["TE"];
+
     Tilemap::initializeLua(lua);
     lua.new_usertype<Background>(
         "Background", sol::no_constructor,
@@ -65,13 +55,13 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
         }
     );
 
-    lua["room_create"] = [&](RoomReference* room) {
+    engineEnv["room_create"] = [&](RoomReference* room) {
         std::unique_ptr<Room> r;
         if (room == nullptr) {
             r = std::make_unique<Room>(lua);
         }
         else {
-            r = std::make_unique<Room>(lua, *room);
+            r = std::make_unique<Room>(lua, room);
         }
         r->load();
         return std::move(r);
@@ -85,6 +75,7 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
         "get_width", &Camera::getWidth,         "get_height", &Camera::getHeight,
 
         "set_x", &Camera::setX,                 "set_y", &Camera::setY,
+        "stay_in_bounds", &Camera::stayInBounds,
         
         "teleport", &Camera::teleport
     );
@@ -134,29 +125,12 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
         std::filesystem::path p = it.path();
         std::string identifier = p.filename().replace_extension("").string();
 
-        RoomReference& ref = Game::get().rooms[identifier];
+        RoomReference& ref = Game::get().roomReferences[identifier];
         ref.name = identifier;
         ref.p = p;
 
-        lua[identifier] = ref;
+        engineEnv[identifier] = ref;
     }
-}
-
-static int count;
-Room::Room(sol::state &lua, const RoomReference &room) : lua(lua) {
-    roomReference = &room;
-    camera.room = this;
-    count++;
-}
-
-Room::Room(sol::state &lua) : lua(lua) {
-    roomReference = nullptr;
-    camera.room = this;
-    count++;
-}
-
-Room::~Room() {
-    --count;
 }
 
 void Room::load() {
@@ -164,6 +138,7 @@ void Room::load() {
 
     auto& game = Game::get();
     auto& objMgr = ObjectManager::get();
+    auto engineEnv = lua["TE"];
 
     camera.width = game.canvasWidth;
     camera.height = game.canvasHeight;
@@ -346,7 +321,8 @@ void Room::load() {
                 float y;
                 in.read(reinterpret_cast<char*>(&y), sizeof(y));
 
-                BaseObject* base = objMgr.baseClasses[name].objectPtr->get();
+                BaseObject* base = objMgr.gmlObjects[name];
+                
                 auto obj = instanceCreate(x, y, depth, base);
 
                 bool readAdvanced = false;
@@ -403,8 +379,8 @@ void Room::load() {
                         }
                         else { // other
                             std::string val = readstr();
-                            if (lua[val] != sol::lua_nil) {
-                                props[key] = lua[val];
+                            if (engineEnv[val] != sol::lua_nil) {
+                                props[key] = engineEnv[val];
                             }
                             else {
                                 props[key] = sol::make_object(lua, val);
@@ -437,21 +413,6 @@ void Room::createAndRoomStartEvents() {
         objUnique->runScript("create", this);
     }
     updateQueue();
-
-    // Room creation code specific to this room
-    if (roomReference != nullptr) {
-        lua["room"] = this;
-        std::filesystem::path roomScript = game.assetsFolder / "scripts" / "rooms" / std::string(roomReference->name + ".lua");
-        if (std::filesystem::exists(roomScript)) {
-            auto result = LuaScript(lua, roomScript);
-            if (!result.valid()) {
-                sol::error e = result;
-                std::cout << e.what() << "\n";
-            }
-        }
-        lua["room"] = nullptr;
-        updateQueue();
-    }
 
     auto start = kvp.find("room_start");
     if (start != kvp.end()) {
@@ -494,9 +455,14 @@ void Room::timestep() {
 
     // Step
     for (auto& instance : instances) {
+        if (instance->active) {
+            instance->runScript("step", this);
+        }
+        /*
         if (instance->active && instance->stepFunc.has_value()) {
             instance->stepFunc.value()(instance->MyReference, this);
         }
+        */
     }
     updateQueue();
 
@@ -545,10 +511,10 @@ void Room::draw(float alpha) {
     }
 
     for (auto& d : drawables) {
-        if (d->drawFunc.has_value()) {
+        /*if (d->drawFunc.has_value()) {
             d->drawFunc.value()(d->MyReference, this, alpha);
         }
-        else {
+        else*/ {
             d->draw(this, alpha);
         }
     }

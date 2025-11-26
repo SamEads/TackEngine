@@ -144,23 +144,26 @@ void Object::drawGui(Room *room, float alpha) {
 	runScript("draw_gui", room, alpha);
 }
 
-static sol::object ObjectCreate(
+static BaseObject* ObjectCreate(
     const std::string& identifier,
-    const std::unique_ptr<BaseObject>& extends,
+    BaseObject* extends,
     sol::state& lua, const std::filesystem::path& assets,
     const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths)
 {
     auto& objMgr = ObjectManager::get();
-    auto& baseClasses = objMgr.baseClasses;
+    auto& gmlObjects = objMgr.gmlObjects;
 
-    if (baseClasses.find(identifier) != baseClasses.end()) {
-        return sol::object(sol::lua_nil);
+    if (!identifier.empty()) {
+        auto it = gmlObjects.find(identifier);
+        if (it != gmlObjects.end()) {
+            return it->second;
+        }
     }
 
     std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>(lua);
 
     if (extends != nullptr) {
-        newObject->parent = extends.get();
+        newObject->parent = extends;
         for (auto& prop : extends->rawProperties) {
             newObject->rawProperties[prop.first] = { prop.second.first, prop.second.second };
         }
@@ -169,18 +172,14 @@ static sol::object ObjectCreate(
         }
     }
 
-    lua.create_named_table(identifier);
-    lua[identifier] = std::move(newObject);
-    std::unique_ptr<BaseObject>& memPtr = lua[identifier].get<std::unique_ptr<BaseObject>&>();
+    sol::object globalObject = sol::make_object(lua, std::move(newObject));
+    std::unique_ptr<BaseObject>& memPtr = globalObject.as<std::unique_ptr<BaseObject>&>();
 
-    baseClasses[identifier] = ObjectManager::ScriptedInfo {
-        &memPtr,
-        [](BaseObject* original) {
-            return std::make_unique<Object>(*original);
-        }
-    };
+    if (!identifier.empty()) {
+        // lua["TE"][identifier] = globalObject;
+        gmlObjects[identifier] = memPtr.get();
+    }
 
-    sol::object solObject = lua[identifier];
     memPtr->self = memPtr.get();
     memPtr->identifier = identifier;
 
@@ -194,129 +193,119 @@ static sol::object ObjectCreate(
         }
     }
 
-    return solObject;
+    return memPtr.get();
 }
 
-static sol::object ObjectCreateRecursive(
+ConvertType deduceType (const json& v) {
+    if (v.is_number_integer())  return ConvertType::INTEGER;
+    if (v.is_number())          return ConvertType::REAL;
+    if (v.is_boolean())         return ConvertType::BOOLEAN;
+    if (v.is_string())          return ConvertType::STRING;
+    return ConvertType::STRING;
+};
+
+void addJSONPropsToObject(const json& props, BaseObject* obj) {
+    for (auto& prop : props) {
+        obj->rawProperties[prop["name"]] = { static_cast<ConvertType>(prop.value("type", static_cast<int>(deduceType(prop["value"])))), prop["value"] };
+    }
+}
+
+static void ObjectTemplateCreateRecursive(
     std::string identifier,
     sol::state& lua,
     const std::filesystem::path& assets,
     const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths) {
     // potentially a parent class- ignore
     ObjectManager& objMgr = ObjectManager::get();
-    if (objMgr.baseClasses.find(identifier) != objMgr.baseClasses.end()) {
-        return sol::object(sol::lua_nil);
+    if (objMgr.gmlObjects.find(identifier) != objMgr.gmlObjects.end()) {
+        return;
     }
 
     std::filesystem::path p = assets / "managed" / "objects" / (identifier + ".json");
     if (!std::filesystem::exists(p)) {
-        return sol::object(sol::lua_nil);
+        return;
     }
 
     std::ifstream i(p);
     json j = json::parse(i);
 
-    sol::object objSol = sol::lua_nil;
-
-    auto deduceType = [](const json& v) {
-        if (v.is_number_integer())  return ConvertType::INTEGER;
-        if (v.is_number())          return ConvertType::REAL;
-        if (v.is_boolean())         return ConvertType::BOOLEAN;
-        if (v.is_string())          return ConvertType::STRING;
-        return ConvertType::STRING;
-    };
-
+    BaseObject* obj = nullptr;
     if (!j["parent"].is_null()) {
         std::string parentIdentifier = j["parent"];
-        auto it = objMgr.baseClasses.find(parentIdentifier);
-        if (it == objMgr.baseClasses.end()) {
-            ObjectCreateRecursive(parentIdentifier, lua, assets, objectScriptPaths);
+        auto it = objMgr.gmlObjects.find(parentIdentifier);
+        if (it == objMgr.gmlObjects.end()) {
+            ObjectTemplateCreateRecursive(parentIdentifier, lua, assets, objectScriptPaths);
         }
-        std::unique_ptr<BaseObject>& parentObj = *objMgr.baseClasses.at(parentIdentifier).objectPtr;
-        objSol = ObjectCreate(identifier, parentObj, lua, assets, objectScriptPaths);
-        std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
-        for (auto& prop : j["properties"]) {
-            obj->rawProperties[prop["name"]] = { static_cast<ConvertType>(prop.value("type", static_cast<int>(deduceType(prop["value"])))), prop["value"] };
-        }
+        BaseObject* parentObj = objMgr.gmlObjects.at(parentIdentifier);
+        obj = ObjectCreate(identifier, parentObj, lua, assets, objectScriptPaths);
+        addJSONPropsToObject(j["properties"], obj);
     }
     else {
-        objSol = ObjectCreate(identifier, nullptr, lua, assets, objectScriptPaths);
-        std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
-        for (auto& prop : j["properties"]) {
-            obj->rawProperties[prop["name"]] = { static_cast<ConvertType>(prop.value("type", static_cast<int>(deduceType(prop["value"])))), prop["value"] };
-        }
+        obj = ObjectCreate(identifier, nullptr, lua, assets, objectScriptPaths);
+        addJSONPropsToObject(j["properties"], obj);
     }
 
-    std::unique_ptr<BaseObject>& obj = objSol.as<std::unique_ptr<BaseObject>&>();
     obj->visible = j["visible"];
 
     if (!j["sprite"].is_null()) {
         obj->spriteIndex = &SpriteManager::get().sprites.at(j["sprite"]);
     }
-
-    return objSol;
 }
 
-std::unique_ptr<Object> ObjectManager::make(sol::state &lua, BaseObject *baseObject) {
-    if (baseObject != NULL) {
-        auto& list = baseClasses;
+std::unique_ptr<Object> ObjectManager::makeInstance(sol::state& lua, BaseObject* baseObject) {
+    if (baseObject == NULL) {
+        auto copied = std::make_unique<Object>(lua);
+        return copied;
+    }
 
-        auto it = std::find_if(list.begin(), list.end(), [&baseObject](const std::pair<std::string, ScriptedInfo>& p) {
-            return p.second.objectPtr->get() == baseObject;
-        });
+    auto copied = std::make_unique<Object>(*baseObject);
 
-        if (it != list.end()) {
-            auto copied = it->second.create(baseObject);
+    if (baseObject->parent) {
+        std::deque<BaseObject*> parents;
+        BaseObject* f = baseObject->parent;
 
-            std::deque<BaseObject*> parents;
-            BaseObject* f = baseObject->parent;
-            if (f) {
-                while (true) {
-                    if (f) {
-                        parents.push_back(f);
-                        f = f->parent;
-                    }
-                    else break;
-                }
-                while (!parents.empty()) {
-                    BaseObject* p = parents.front();
-                    parents.pop_front();
-                    for (auto& v : p->kvp) {
-                        copied->setDyn(v.first, v.second);
-                    }
-                    if (p->rawProperties.size() > 0) {
-                        sol::table t;
-                        if (copied->kvp.find("properties") != copied->kvp.end()) {
-                            t = copied->getDyn("properties");
-                        } else {
-                            t = copied->kvp.insert({ "properties", sol::table(lua, sol::create) }).first->second;
-                        }
-                        for (auto& [k, v] : p->rawProperties) {
-                            t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
-                        }
-                    }
-                }
+        for (BaseObject* par = baseObject->parent; par; par = par->parent) {
+            parents.push_back(par);
+        }
+
+        while (!parents.empty()) {
+            BaseObject* p = parents.front();
+            parents.pop_front();
+
+            for (auto& v : p->kvp) {
+                copied->kvp.insert(v);
             }
-            for (auto& v : baseObject->kvp) {
-                copied->setDyn(v.first, v.second);
-            }
-            if (baseObject->rawProperties.size() > 0) {
+
+            if (p->rawProperties.size() > 0) {
                 sol::table t;
                 if (copied->kvp.find("properties") != copied->kvp.end()) {
                     t = copied->getDyn("properties");
                 } else {
                     t = copied->kvp.insert({ "properties", sol::table(lua, sol::create) }).first->second;
                 }
-                for (auto& [k, v] : baseObject->rawProperties) {
+                for (auto& [k, v] : p->rawProperties) {
                     t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
                 }
             }
-            return copied;
+
         }
     }
+    
+    for (auto& v : baseObject->kvp) {
+        copied->setDyn(v.first, v.second);
+    }
 
-    // basic object, original didn't exist
-    auto copied = std::make_unique<Object>(lua);
+    if (baseObject->rawProperties.size() > 0) {
+        sol::table t;
+        if (copied->kvp.find("properties") != copied->kvp.end()) {
+            t = copied->getDyn("properties");
+        } else {
+            t = copied->kvp.insert({ "properties", sol::table(lua, sol::create) }).first->second;
+        }
+        for (auto& [k, v] : baseObject->rawProperties) {
+            t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
+        }
+    }
     return copied;
 }
 
@@ -365,6 +354,8 @@ WRAPPER_GET(x_previous_render, xPrevRender, float)
 WRAPPER_GET(y_previous_render, yPrevRender, float)
 
 void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
+    sol::table engineEnv = lua["TE"];
+
     auto objtype = lua.new_usertype<Object>(
         "Object", sol::no_constructor,
 
@@ -418,7 +409,7 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         "bbox_bottom",  w_bb_bottom,
         "force_x",      w_force_x,
         "force_y",      w_force_y,
-        "extends",      w_extends,
+        "is_a",         w_extends,
         "force_position", [](const Object::Reference& caller, float x, float y) {
             w_force_x(caller, x);
             w_force_y(caller, y);
@@ -440,21 +431,77 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
         }
     }
 
-    lua["object_create"] = [&](const std::string& identifier, sol::object extends) {
-        if (extends.is<std::unique_ptr<BaseObject>>()) {
-            return ObjectCreate(identifier, extends.as<std::unique_ptr<BaseObject>&>(), lua, assets, scriptPaths);
+    engineEnv["object_create"] = [&](sol::variadic_args va) {
+        // Has parent
+        if (va.size() == 1 && va[0].is<std::unique_ptr<BaseObject>>()) {
+            auto& parent = va[0].as<std::unique_ptr<BaseObject>&>();
+            auto newObj = std::make_unique<BaseObject>(*(parent.get()));
+            
+            newObj->parent = parent.get();
+            newObj->self = newObj.get();
+
+            for (auto& prop : parent->rawProperties) {
+                newObj->rawProperties[prop.first] = { prop.second.first, prop.second.second };
+            }
+
+            for (std::pair p : parent->kvp) {
+                newObj->kvp.insert(p);
+            }
+
+            return std::move(newObj);
         }
+        else if (va.size() >= 1 && va[0].is<std::string>()) {
+            auto str = va[0].as<std::string>();
+            
+            auto newObj = std::make_unique<BaseObject>(lua);
+
+            newObj->self = newObj.get();
+            newObj->identifier = str;
+
+            if (va.size() >= 2 && va[1].is<std::unique_ptr<BaseObject>>()) {
+                auto& parent = va[1].as<std::unique_ptr<BaseObject>&>();
+                newObj->parent = parent.get();
+
+                for (auto& prop : parent->rawProperties) {
+                    newObj->rawProperties[prop.first] = { prop.second.first, prop.second.second };
+                }
+                for (std::pair p : parent->kvp) {
+                    newObj->kvp.insert(p);
+                }
+            }
+
+            std::filesystem::path p = assets / "managed" / "objects" / (str + ".json");
+            if (std::filesystem::exists(p)) {
+                std::ifstream i(p);
+                json j = json::parse(i);
+                addJSONPropsToObject(j["properties"], newObj.get());
+                if (!j["sprite"].is_null()) {
+                    newObj->spriteIndex = &SpriteManager::get().sprites.at(j["sprite"]);
+                }
+                newObj->visible = j["visible"];
+            }
+
+            auto& objMgr = ObjectManager::get();
+            objMgr.gmlObjects[str] = newObj.get();
+
+            return std::move(newObj);
+        }
+        // No parent
         else {
-            return ObjectCreate(identifier, nullptr, lua, assets, scriptPaths);
+            auto newObj = std::make_unique<BaseObject>(lua);
+            newObj->self = newObj.get();
+            return std::move(newObj);
         }
     };
 
+    /*
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "objects")) {
         if (!it.is_regular_file()) {
             continue;
         }
         std::string identifier = it.path().filename().replace_extension("").string();
-        ObjectCreateRecursive(identifier, lua, assets, scriptPaths);
+        ObjectTemplateCreateRecursive(identifier, lua, assets, scriptPaths);
     }
+    */
 
 }

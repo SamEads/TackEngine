@@ -51,6 +51,8 @@ void InitializeLuaEnvironment(sol::state& lua) {
         return ra.findIntersection(rb).has_value();
     };
 
+    Game::get().engineEnv = lua.create_named_table("TE");
+
     Room::initializeLua(lua, assets);
     TilesetManager::get().initializeLua(lua, assets);
     SpriteManager::get().initializeLua(lua, assets);
@@ -83,7 +85,7 @@ int main() {
     ProcessInfo process;
     SystemInformation sys_info;
 
-    lua["game"]["get_memory"] = [&process]() {
+    game.engineEnv["game"]["get_memory"] = [&process]() {
         auto memory = process.GetMemoryUsage() / 1'000;
         return memory;
     };
@@ -96,7 +98,7 @@ int main() {
     game.currentRenderer = nullptr;
 
     game.timer.setTickRate(60);
-    lua["game"]["init"](lua["game"]);
+    game.engineEnv["game"]["init"](game);
 
     sf::Clock clock;
     int fps = 0, frame = 0;
@@ -112,7 +114,7 @@ int main() {
         const int ticks = game.timer.getTickCount();
         for (int i = 0; i < ticks; ++i) {
             game.getKVP("step").as<sol::function>()(game);
-            Keys::get().update();
+            Keys::get().update(game.window->hasFocus());
         }
 
         float alpha = game.timer.getAlpha();
@@ -137,7 +139,7 @@ int main() {
         ++frame;
     }
 
-    ObjectManager::get().baseClasses.clear();
+    ObjectManager::get().gmlObjects.clear();
     TilesetManager::get().tilesets.clear();
     SpriteManager::get().sprites.clear();
 }

@@ -6,13 +6,16 @@
 using namespace nlohmann;
 
 void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
+	sol::table engineEnv = lua["TE"];
+	sol::table soundModule = engineEnv.create_named("sound");
+
 	auto paths = { assets / "sounds", assets / "music" };
 	for (auto& p : paths) {
 		for (auto& it : std::filesystem::directory_iterator(p)) {
 			if (!it.is_regular_file()) continue;
 
 			std::string soundName = it.path().filename().replace_extension("").string();
-			if (lua[soundName] != sol::lua_nil) continue; // already contains sound
+			if (engineEnv[soundName] != sol::lua_nil) continue; // already contains sound
 
 			std::filesystem::path soundFile = it.path();
 
@@ -21,7 +24,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 			asset.path = soundFile;
 			asset.volume = 1.0f;
 
-			lua[soundName] = asset;
+			engineEnv[soundName] = asset;
 		}
 	}
 
@@ -29,7 +32,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
         if (!it.is_directory()) continue;
 
         std::string soundName = it.path().filename().string();
-		if (lua[soundName] != sol::lua_nil) continue; // already contains sound
+		if (engineEnv[soundName] != sol::lua_nil) continue; // already contains sound
 
         auto dataFile = it.path() / "data.json";
         std::ifstream i(dataFile);
@@ -42,12 +45,11 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		asset.path = soundFile;
 		asset.volume = j["volume"];
 
-        lua[soundName] = asset;
+        engineEnv[soundName] = asset;
     }
 
-	lua.create_named_table("sound");
 
-	lua["sound"]["play"] = [&](sol::object sound, float gain, float pitch) {
+	soundModule["play"] = [&](sol::object sound, float gain, float pitch) {
 		if (!sound.is<SoundAsset>() && !sound.is<SoundInstanceReference>()) {
 			return sol::make_object(lua, sol::lua_nil);
 		}
@@ -80,7 +82,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		return sol::make_object(lua, ref);
     };
 
-    lua["sound"]["set_loops"] = [&](sol::object sound, bool loops) {
+    soundModule["set_loops"] = [&](sol::object sound, bool loops) {
 		if (sound.is<SoundInstanceReference>()) {
 			auto& inst = sound.as<SoundInstanceReference>();
 			auto it = inst.buffer->instances.find(inst.id);
@@ -91,7 +93,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		}
 	};
 
-    lua["sound"]["is_playing"] = [&](sol::object sound) {
+    soundModule["is_playing"] = [&](sol::object sound) {
 		if (sound.is<SoundAsset>()) {
 			auto& asset = sound.as<SoundAsset>();
 			auto it = buffers.find(asset.name);
@@ -120,7 +122,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		return false;
     };
 
-    lua["sound"]["get_position"] = [&](sol::object sound) {
+    soundModule["get_position"] = [&](sol::object sound) {
 		if (!sound.is<SoundInstanceReference>()) {
 			return 0.0f;
 		}
@@ -135,7 +137,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		return off;
 	};
 
-	lua["sound"]["set_loops"] = [&](sol::object sound, bool loops) {
+	soundModule["set_loops"] = [&](sol::object sound, bool loops) {
 		if (!sound.is<SoundInstanceReference>()) {
 			return;
 		}
@@ -149,7 +151,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		it->second->sound->setLooping(loops);
 	};
 
-    lua["sound"]["set_position"] = [&](sol::object sound, float position) {
+    soundModule["set_position"] = [&](sol::object sound, float position) {
 		if (!sound.is<SoundInstanceReference>()) {
 			return;
 		}
@@ -163,7 +165,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		it->second->sound->setPlayingOffset(sf::seconds(position));
 	};
 
-    lua["sound"]["stop_all"] = [&]() {
+    soundModule["stop_all"] = [&]() {
 		for (auto& it : buffers) {
 			for (auto& it2 : it.second.instances) {
 				it2.second->sound->stop();
@@ -171,7 +173,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 		}
 	};
 
-    lua["sound"]["stop"] = [&](sol::object sound) {
+    soundModule["stop"] = [&](sol::object sound) {
 		if (sound.is<SoundAsset>()) {
 			auto& asset = sound.as<SoundAsset>();
 			auto buf = buffers.find(asset.name);
@@ -229,9 +231,10 @@ void SoundManager::update() {
 }
 
 void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
-	lua.create_named_table("music");
+	sol::table engineEnv = lua["TE"];
+	sol::table musicModule = engineEnv.create_named("music");
 
-    lua["music"]["play"] = [&](SoundAsset& sound) {
+    musicModule["play"] = [&](SoundAsset& sound) {
 		bool _ = music.openFromFile(sound.path);
 		music.setLooping(true);
 		music.play();
@@ -239,7 +242,7 @@ void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& a
 		volume = 1.0f;
 		asset = &sound;
     };
-    lua["music"]["set_loop_points"] = [&](float a, float b) {
+    musicModule["set_loop_points"] = [&](float a, float b) {
 		if (a == 0 && b == 0) return;
 
 		sf::Music::TimeSpan timespan;
@@ -247,33 +250,33 @@ void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& a
 		timespan.length = sf::seconds(b) - timespan.offset;
 		music.setLoopPoints(timespan);
     };
-    lua["music"]["stop"] = [&]() {
+    musicModule["stop"] = [&]() {
 		music.stop();
     };
-	lua["music"]["unpause"] = [&]() {
+	musicModule["unpause"] = [&]() {
 		if (music.getStatus() == sf::Music::Status::Paused) {
 			music.play();
 		}
     };
-    lua["music"]["pause"] = [&]() {
+    musicModule["pause"] = [&]() {
 		music.pause();
     };
-    lua["music"]["get_position"] = [&]() {
+    musicModule["get_position"] = [&]() {
         return music.getPlayingOffset().asSeconds();
     };
-	lua["music"]["set_loops"] = [&](bool loops) {
+	musicModule["set_loops"] = [&](bool loops) {
 		music.setLooping(loops);
     };
-	lua["music"]["is_playing"] = [&]() {
+	musicModule["is_playing"] = [&]() {
         return music.getStatus() == sf::Music::Status::Playing;
     };
-    lua["music"]["set_position"] = [&](float position) {
+    musicModule["set_position"] = [&](float position) {
 		music.setPlayingOffset(sf::seconds(position));
     };
-    lua["music"]["set_volume"] = [&](float volume) {
+    musicModule["set_volume"] = [&](float volume) {
 		music.setVolume(this->volume * volume * 100.0f);
     };
-    lua["music"]["set_pitch"] = [&](float pitch) {
+    musicModule["set_pitch"] = [&](float pitch) {
 		music.setPitch(pitch);
     };
 }

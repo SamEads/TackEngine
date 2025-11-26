@@ -3,7 +3,7 @@
 #include "game.h"
 
 void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
-    lua.create_named_table("font");
+    sol::table engineEnv = lua["TE"];
 
     std::filesystem::path fontsDirectory = assets / "fonts";
     if (std::filesystem::exists(fontsDirectory) && std::filesystem::is_directory(fontsDirectory)) {
@@ -11,27 +11,26 @@ void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
             if (it.is_regular_file()) {
                 const auto& fontPath = it.path();
                 std::string fontName = fontPath.filename().replace_extension("").string();
-                std::cout << "Added font " << fontName << "\n";
                 auto& font = fonts[fontName];
                 font.isSpriteFont = false;
                 font.fontIndex = sf::Font(fontPath);
                 font.fontIndex.setSmooth(false);
-                lua[fontName] = &fonts[fontName];
+                engineEnv[fontName] = &fonts[fontName];
             }
         }
     }
 
-    lua["font"]["add"] = [&](const std::string fontName, SpriteIndex* spriteIndex, const std::string& order) {
-        auto& font = fonts[fontName];
+    engineEnv["gfx"]["create_font_from_sprite"] = [&](SpriteIndex* spriteIndex, const std::string& order) {
+        Font font = {};
         font.spriteIndex = spriteIndex;
         font.isSpriteFont = true;
         for (int i = 0; i < order.length(); ++i) {
             font.charMap[order[i]] = i;
         }
-        lua[fontName] = &fonts[fontName];
+        return font;
     };
 
-    lua["font"]["draw"] = [&](float x, float y, Font* font, int size, int spacing, const std::string& string, sol::table color) {
+    engineEnv["gfx"]["draw_font"] = [&](float x, float y, Font* font, int size, int spacing, const std::string& string, sol::table color) {
         if (font->isSpriteFont) {
             auto& spriteIndex = font->spriteIndex;
             sf::RenderTarget& currentRenderer = *Game::get().getRenderTarget();

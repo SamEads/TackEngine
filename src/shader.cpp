@@ -4,34 +4,35 @@
 #include "game.h"
 
 void ShaderManager::initializeLua(sol::state& lua) {
-    lua.create_named_table("shader");
+    sol::table engineEnv = lua["TE"];
+    sol::table shaderModule = engineEnv.create_named("shader");
 
-    lua["shader"]["add_fragment"] = [&](const std::string& identifier, const std::string& fragment) {
-        Shader& s = this->shaders[identifier];
+    shaderModule["add_fragment"] = [&](const std::string& fragment) {
+        Shader s = Shader ();
         bool loaded = s.baseShader.loadFromMemory(fragment, sf::Shader::Type::Fragment);
         if (loaded) { }
-        lua[identifier] = &s;
+        return s;
     };
 
-    lua["shader"]["add_vertex"] = [&](const std::string& identifier, const std::string& fragment) {
-        Shader& s = this->shaders[identifier];
+    shaderModule["add_vertex"] = [&](const std::string& fragment) {
+        Shader s = Shader ();
         bool loaded = s.baseShader.loadFromMemory(fragment, sf::Shader::Type::Vertex);
         if (loaded) { }
-        lua[identifier] = &s;
+        return s;
     };
 
-    lua["shader"]["add"] = [&](const std::string& identifier, const std::string& vertex, const std::string& fragment) {
-        Shader& s = this->shaders[identifier];
+    shaderModule["add"] = [&](const std::string& vertex, const std::string& fragment) {
+        Shader s = Shader ();
         bool loaded = s.baseShader.loadFromMemory(vertex, fragment);
         if (loaded) { }
-        lua[identifier] = &s;
+        return s;
     };
 
-    lua["shader"]["set_uniform"] = [&](Shader* shader, const std::string& uniform, sol::object data) {
+    shaderModule["set_uniform"] = [&](Shader* shader, const std::string& uniform, sol::object data) {
         setUniform(shader, uniform, data);
     };
 
-    lua["shader"]["bind"] = [&](sol::object shader) {
+    shaderModule["bind"] = [&](sol::object shader) {
         if (shader == sol::lua_nil) {
             Game::get().currentShader = nullptr;
             return;

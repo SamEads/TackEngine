@@ -5,6 +5,8 @@
 void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
     TilesetManager& tsMgr = TilesetManager::get();
     SpriteManager& sprMgr = SpriteManager::get();
+    sol::table engineEnv = lua["TE"];
+
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "tilesets")) {
         if (!it.is_regular_file()) {
             continue;
@@ -42,6 +44,6 @@ void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path&
             nullptr
         );
         tsMgr.tilesets[identifier] = ts;
-        lua[identifier] = &tsMgr.tilesets[identifier];
+        engineEnv[identifier] = &tsMgr.tilesets[identifier];
     }
 }

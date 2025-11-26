@@ -4,6 +4,7 @@
 #include "object.h"
 #include "collision.h"
 #include "tilemap.h"
+#include "roomreference.h"
 
 class Background : public Object {
 public:
@@ -16,33 +17,37 @@ public:
     void draw(Room* room, float alpha) override;
 };
 
-class RoomReference {
-public:
-    std::string name;
-    std::filesystem::path p;
-};
-
-
 class Room {
 private:
     class Camera {
     public:
+        bool stayInBounds = true;
         Room* room;
-        float x, y;
+        float x = 0, y = 0;
+        float xPrev = 0, yPrev = 0;
         float width, height;
-        float xPrev, yPrev;
-        float getX () const { return x; }
-        float getY () const { return y; }
-        void setX ( float x ) {
-            this->x = std::clamp(x, 0.0f, room->width - width);
+        float getX() const { return x; }
+        float getY() const { return y; }
+        void setX(float x) {
+            if (!stayInBounds) {
+                this->x = x;
+            }
+            else {
+                this->x = std::clamp(x, 0.0f, room->width - width);
+            }
         }
-        void setY ( float y ) {
-            this->y = std::clamp(y, 0.0f, room->height - height);
+        void setY(float y) {
+            if (!stayInBounds) {
+                this->y = y;
+            }
+            else {
+                this->y = std::clamp(y, 0.0f, room->height - height);
+            }
         }
-        float getXPrev () const { return xPrev; }
-        float getYPrev () const { return yPrev; }
-        float getWidth () const { return width; }
-        float getHeight () const { return height; }
+        float getXPrev() const { return xPrev; }
+        float getYPrev() const { return yPrev; }
+        float getWidth() const { return width; }
+        float getHeight() const { return height; }
         void teleport(float x, float y) {
             setX(x);
             setY(y);
@@ -74,9 +79,9 @@ public:
     Camera camera;
     float renderCameraX = 0, renderCameraY = 0;
 
-    Room(sol::state& lua, const RoomReference& room);
+    Room(sol::state& lua, RoomReference* data);
     Room(sol::state& lua);
-    ~Room();
+    ~Room() = default;
 
     void load();
 
@@ -95,7 +100,6 @@ public:
         int size = instances.size();
         for (auto& o : addQueue) {
             o->vectorPos = size;
-            std::cout << "Added object " << o->identifier << "\n";
             instances.push_back(std::move(o));
             size++;
         }
@@ -104,7 +108,6 @@ public:
         if (!deleteQueue.empty()) {
             std::sort(deleteQueue.begin(), deleteQueue.end(), std::greater<size_t>());
             for (auto& pos : deleteQueue) {
-                std::cout << "Deleted object " << instances[pos]->identifier << "\n";
                 size_t size = instances.size();
                 if (pos >= size - 1) {
                     instances.pop_back();
@@ -320,7 +323,7 @@ public:
 
 
         /*
-        Precise (old)
+        Precise
         if (type == sol::lua_nil) {
             return sol::make_object(lua, sol::lua_nil);
         }
@@ -423,11 +426,17 @@ public:
     }
 
     Object* instanceCreate(float x, float y, float depth, BaseObject* baseObject) {
-        std::unique_ptr<Object> copiedObject = ObjectManager::get().make(lua, baseObject);
-
+        std::unique_ptr<Object> copiedObject = ObjectManager::get().makeInstance(lua, baseObject);
+        
         copiedObject->MyReference.id = currentId++;
         copiedObject->self = baseObject;
-        copiedObject->MyReference = Object::Reference { copiedObject->MyReference.id, this->myId, sol::make_object(lua, copiedObject.get()), copiedObject.get() };
+        copiedObject->MyReference = Object::Reference {
+            copiedObject->MyReference.id,
+            this->myId,
+            sol::make_object(lua, copiedObject.get()),
+            copiedObject.get()
+        };
+
         copiedObject->x = x;
         copiedObject->y = y;
         copiedObject->depth = depth;
@@ -436,14 +445,6 @@ public:
 
         addQueue.push_back(std::move(copiedObject));
         ids[ptr->MyReference.id] = ptr;
-
-        if (ptr->kvp.find("draw") != ptr->kvp.end()) {
-            ptr->drawFunc = ptr->kvp.find("draw")->second.as<sol::function>();
-        }
-
-        if (ptr->kvp.find("step") != ptr->kvp.end()) {
-            ptr->stepFunc = ptr->kvp.find("step")->second.as<sol::function>();
-        }
 
         return ptr;
     }

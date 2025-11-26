@@ -1,11 +1,10 @@
 #include "keys.h"
-#include "game.h"
 
-void Keys::update() {
+void Keys::update(bool windowFocused) {
 	for (int i = 0; i < keys.size(); ++i)
 		keysLast[i] = keys[i];
 
-	if (!Game::get().window->hasFocus()) {
+	if (!windowFocused) {
 		for (int i = 0; i < keys.size(); ++i)
 			keys[i] = false;
 	}
@@ -21,13 +20,14 @@ bool Keys::released(sf::Keyboard::Scancode key) { return keysLast[(int)key] && !
 void Keys::initializeLua(sol::state& lua) {
     using namespace sf::Keyboard;
 
-    lua.create_named_table("keyboard");
+    sol::table engineEnv = lua["TE"];
+    sol::table keyboardModule = engineEnv.create_named("keyboard");
 
-    lua["keyboard"]["check"] = [this](Scancode key) { return held(key); };
-    lua["keyboard"]["pressed"] = [this](Scancode key) { return pressed(key); };
-    lua["keyboard"]["released"] = [this](Scancode key) { return released(key); };
+    keyboardModule["check"] = [this](Scancode key) { return held(key); };
+    keyboardModule["pressed"] = [this](Scancode key) { return pressed(key); };
+    keyboardModule["released"] = [this](Scancode key) { return released(key); };
 
-	lua.new_enum("Key",
+	engineEnv.new_enum("Key",
         "unknown", Scancode::Unknown,
         "a", Scancode::A,
         "b", Scancode::B,

@@ -1,45 +1,43 @@
 #pragma once
 
-#include "room.h"
+#include <SFML/Graphics.hpp>
+#include <memory>
+#include <sol/sol.hpp>
 #include "util/profiler.h"
 #include "util/timer.h"
+#include "roomreference.h"
+#include "objectid.h"
 
 class Game {
 public:
     unsigned int canvasWidth = 640;
     unsigned int canvasHeight = 480;
     Profiler profiler;
+    sol::table engineEnv;
     sol::state lua;
     bool letterbox = true;
     bool drawRoom = true;
     bool switchRooms = false;
-    ObjectId roomId;
-    std::unique_ptr<Room> room;
-    std::unique_ptr<Room> queuedRoom;
+    ObjectId nextRoomId;
     std::filesystem::path assetsFolder = "assets";
-    std::unordered_map<std::string, RoomReference> rooms;
+    std::unordered_map<std::string, RoomReference> roomReferences;
     std::unordered_map<std::string, sol::object> kvp;
     Timer timer;
     float fps = 0;
 
-#ifdef USE_RAYLIB_BACKEND
-    RenderTexture consoleRenderer;
-    Shader* currentShader;
-#else
     sf::RenderTarget* currentRenderer;
     std::unique_ptr<sf::RenderTexture> consoleRenderer;
     std::unique_ptr<sf::RenderWindow> window;
     inline sf::RenderTarget* getRenderTarget() { return (currentRenderer == nullptr) ? window.get() : currentRenderer; }
     sf::Shader* currentShader;
-#endif
 
+    void initializeLua(sol::state& state, const std::filesystem::path& assets);
+    
     static Game& get() {
         static Game game;
         return game;
     }
-    Room* queueRoom(RoomReference* room);
-    Room* getRoom();
-    void initializeLua(sol::state& state, const std::filesystem::path& assets);
+
     void setKVP(const std::string& key, sol::main_object obj) {
         auto it = kvp.find(key);
         if (it == kvp.end()) {
@@ -49,6 +47,7 @@ public:
             it->second = sol::object(std::move(obj));
         }
     }
+
     sol::object getKVP(const std::string& ref) {
         auto it = kvp.find(ref);
         if (it == kvp.end()) {

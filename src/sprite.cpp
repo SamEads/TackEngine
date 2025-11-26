@@ -94,6 +94,8 @@ static inline void DrawSprite(SpriteIndex* spriteIndex, float imageIndex, float 
 }
 
 void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
+    sol::table engineEnv = lua["TE"];
+
     lua.new_usertype<SpriteIndex>(
         "SpriteIndex", sol::no_constructor,
         "origin_x", sol::readonly(&SpriteIndex::originX),
@@ -220,15 +222,16 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
             spr.texture = tex;
             spr.sprite = std::make_unique<sf::Sprite>(spr.texture);
             spr.frames = frameCoords;
-            lua[identifier] = &spr;
+            engineEnv[identifier] = &spr;
         }
     }
 
     // GFX
-    sol::table gfx = lua.create_named_table("gfx");
+    sol::table gfx = engineEnv.create_named("gfx");
 
-    gfx["clear_canvas"] = [&](sf::RenderTexture* target, sol::table color) {
-        target->clear(MakeColor(color));
+
+    gfx["clear"] = [&](sol::table color) {
+        Game::get().currentRenderer->clear(MakeColor(color));
     };
 
     gfx["set_canvas"] = [&](sf::RenderTexture* target) {
@@ -246,7 +249,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
     };
 
     gfx["resize_canvas"] = [&](sf::RenderTexture* target, unsigned int width, unsigned int height) {
-        target->resize(sf::Vector2u { width, height });
+        return target->resize(sf::Vector2u { width, height });
     };
 
     gfx["draw_canvas"] = [&](sf::RenderTexture* target, float x, float y, float xscale, float yscale, float originx, float originy, float angle) {
@@ -259,6 +262,27 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         Game& game = Game::get();
         game.getRenderTarget()->draw(s, game.currentShader);
     };
+
+    lua.new_usertype<sf::RenderTexture>(
+        "Canvas", sol::no_constructor,
+        "resize", [&](sf::RenderTexture& target, unsigned int width, unsigned int height) {
+            bool result = target.resize(sf::Vector2u { width, height });
+            return result;
+        },
+        "clear", [&](sf::RenderTexture& target, sol::table color) {
+            target.clear(MakeColor(color));
+        },
+        "draw", [&](sf::RenderTexture& target, float x, float y, float xscale, float yscale, float originx, float originy, float angle) {
+            target.display();
+            sf::Sprite s(target.getTexture());
+            s.setPosition({ x, y });
+            s.setScale({ xscale, yscale });
+            s.setOrigin({ originx, originy });
+            s.setRotation(sf::degrees(angle));
+            Game& game = Game::get();
+            game.getRenderTarget()->draw(s, game.currentShader);
+        }
+    );
 
     gfx["draw_rectangle"] = [&](float x1, float y1, float x2, float y2, sol::table color) {
         sf::RectangleShape rs({ x2 - x1, y2 - y1 });

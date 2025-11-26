@@ -7,7 +7,7 @@ class Keys {
 public:
 	std::array<bool, sf::Keyboard::ScancodeCount> keys;
 	std::array<bool, sf::Keyboard::ScancodeCount> keysLast;
-	void update();
+	void update(bool windowFocused);
 	bool pressed(sf::Keyboard::Scancode key);
 	bool held(sf::Keyboard::Scancode key);
 	bool released(sf::Keyboard::Scancode key);

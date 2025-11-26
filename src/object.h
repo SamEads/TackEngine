@@ -9,8 +9,8 @@
 #include "sprite.h"
 #include "util/mathhelper.h"
 #include "drawable.h"
+#include "objectid.h"
 
-using ObjectId = int;
 class Object;
 class BaseObject;
 class Room;
@@ -26,8 +26,8 @@ public:
     Reference MyReference;
 
     sol::state& lua;
-    std::optional<sol::function> drawFunc;
-    std::optional<sol::function> stepFunc;
+    // std::optional<sol::function> drawFunc;
+    // std::optional<sol::function> stepFunc;
     std::unordered_map<std::string, sol::object> kvp;
 
     size_t vectorPos;
@@ -40,7 +40,7 @@ public:
     float imageSpeed = 0.0f;
     float imageSpeedMod = 1.0f;
     float imageAngle = 0.0f;
-    bool incrementImageSpeed = true;
+    bool incrementImageSpeed = false;
     bool active = true;
 
     SpriteIndex* spriteIndex = nullptr;
@@ -144,8 +144,9 @@ enum class ConvertType {
 };
 
 inline sol::object FieldCreateFromProperty(const std::string& k, ConvertType type, const nlohmann::json& v, sol::state& lua) {
-    if ((type == ConvertType::ASSET || type == ConvertType::STRING) && lua[v.get<std::string>()] != sol::lua_nil) {
-        return lua[v.get<std::string>()];
+    sol::table engineEnv = lua["TE"];
+    if ((type == ConvertType::ASSET || type == ConvertType::STRING) && engineEnv[v.get<std::string>()] != sol::lua_nil) {
+        return engineEnv[v.get<std::string>()];
     }
     else if (type == ConvertType::INTEGER) {
         if (v.is_number()) {
@@ -183,19 +184,21 @@ class ObjectManager {
 private:
     std::unordered_map<std::string, std::filesystem::path> scriptPaths;
 public:
+    /*
     class ScriptedInfo {
     public:
         std::unique_ptr<BaseObject>* objectPtr;
         std::function<std::unique_ptr<Object>(BaseObject*)> create;
     };
-    std::unordered_map<std::string, ScriptedInfo> baseClasses;
+    */
+    std::unordered_map<std::string, BaseObject*> gmlObjects;
 
     static ObjectManager& get() {
         static ObjectManager om;
         return om;
     }
 
-    std::unique_ptr<Object> make(sol::state& lua, BaseObject* baseObject);
+    std::unique_ptr<Object> makeInstance(sol::state& lua, BaseObject* baseObject);
 
     void initializeLua(sol::state& lua, const std::filesystem::path& assets);
 };
