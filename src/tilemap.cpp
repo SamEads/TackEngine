@@ -4,7 +4,9 @@
 #include "room.h"
 #include "game.h"
 
-void Tilemap::initializeLua(sol::state &lua) {
+void Tilemap::initializeLua(LuaState L) {
+    // TODO
+    /*
     lua.new_usertype<Tilemap>(
         "Tilemap", sol::no_constructor,
         "visible", &Tilemap::visible,
@@ -20,6 +22,7 @@ void Tilemap::initializeLua(sol::state &lua) {
         "get_ext", &Tilemap::getExt,
         "depth", &Tilemap::depth
     );
+    */
 }
 
 void Tilemap::draw(Room* room, float alpha) {

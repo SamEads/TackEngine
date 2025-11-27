@@ -1,7 +1,8 @@
 #pragma once
 
-#include <sol/sol.hpp>
 #include <SFML/Window/Keyboard.hpp>
+#include <array>
+#include "luainc.h"
 
 class Keys {
 public:
@@ -15,5 +16,5 @@ public:
 		static Keys keys;
 		return keys;
 	}
-	void initializeLua(sol::state& lua);
+	void initializeLua(LuaState L);
 };

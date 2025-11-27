@@ -1,6 +1,6 @@
 #pragma once
 
-#include <sol/sol.hpp>
+#include "luainc.h"
 #include "sprite.h"
 
 class Font {
@@ -14,7 +14,7 @@ public:
 class FontManager {
 public:
     std::unordered_map<std::string, Font> fonts;
-    void initializeLua(sol::state& lua, std::filesystem::path assets);
+    void initializeLua(LuaState& L, std::filesystem::path assets);
     static FontManager& get() {
         static FontManager fm;
         return fm;

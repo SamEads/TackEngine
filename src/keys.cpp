@@ -17,7 +17,9 @@ bool Keys::pressed(sf::Keyboard::Scancode key) { return keys[(int)key] && !keysL
 bool Keys::held(sf::Keyboard::Scancode key) { return keys[(int)key]; }
 bool Keys::released(sf::Keyboard::Scancode key) { return keysLast[(int)key] && !keys[(int)key]; }
 
-void Keys::initializeLua(sol::state& lua) {
+void Keys::initializeLua(LuaState L) {
+    // TODO
+    /*
     using namespace sf::Keyboard;
 
     sol::table engineEnv = lua["TE"];
@@ -176,4 +178,5 @@ void Keys::initializeLua(sol::state& lua) {
         "launchmail", Scancode::LaunchMail,         //!< Keyboard Launch Mail key
         "launchmediaselect", Scancode::LaunchMediaSelect  //!< Keyboard Launch Media Select key
 	);
+    */
 }

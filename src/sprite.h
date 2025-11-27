@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 #include <SFML/Graphics.hpp>
-#include <sol/sol.hpp>
+#include "luainc.h"
 
 class SpriteIndex {
 public:
@@ -74,5 +74,5 @@ public:
         static SpriteManager sm;
         return sm;
     }
-    void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+    void initializeLua(LuaState& L, const std::filesystem::path& assets);
 };

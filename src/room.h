@@ -13,7 +13,7 @@ public:
     bool offsetX, offsetY;
     sf::Color color = { 255, 255, 255, 255 };
 
-    Background(sol::state& lua) : Object(lua) {}
+    Background(LuaState L) : Object(L) {}
     void draw(Room* room, float alpha) override;
 };
 
@@ -59,7 +59,7 @@ private:
     std::vector<Object*> drawables;
     void createAndRoomStartEvents();
 public:
-    static void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+    static void initializeLua(LuaState& L, const std::filesystem::path& assets);
 
     ObjectId myId;
     ObjectId currentId = 0;
@@ -72,16 +72,16 @@ public:
     std::vector<size_t> deleteQueue;
     
     std::unordered_map<ObjectId, Object*> ids;
-    sol::state& lua;
+    LuaState L;
 
     int minReserved = 0;
     int width, height;
     Camera camera;
     float renderCameraX = 0, renderCameraY = 0;
 
-    Room(sol::state& lua, RoomReference* data);
-    Room(sol::state& lua);
-    ~Room() = default;
+    Room(LuaState& L, RoomReference* data);
+    Room(LuaState L);
+    ~Room();
 
     void load();
 
@@ -91,9 +91,10 @@ public:
 
     void setView(float cx, float cy);
 
-    void deactivateObject(sol::object object);
-    void activateObject(sol::object object);
-    void activateObjectRegion(sol::object object, float x1, float y1, float x2, float y2);
+    // TODO
+    // void deactivateObject(sol::object object);
+    // void activateObject(sol::object object);
+    // void activateObjectRegion(sol::object object, float x1, float y1, float x2, float y2);
 
     void updateQueue() {
         // Add queued objects
@@ -146,6 +147,8 @@ public:
         }
     }
 
+    // TODO
+    /*
     void instanceDestroyScript(sol::object obj) {
         if (obj.is<Object::Reference>()) {
             Object::Reference& ref = obj.as<Object::Reference>();
@@ -174,6 +177,7 @@ public:
         }
         return;
     }
+    */
 
     int objectCount(BaseObject* baseType) {
         if (baseType == NULL) {
@@ -190,6 +194,8 @@ public:
 
     std::vector<Object::Reference> objectGetList(BaseObject* baseType);
 
+    // TODO
+    /*
     sol::object getObject(BaseObject* baseType) {
         if (baseType == NULL) {
             return sol::make_object(lua, sol::lua_nil);
@@ -203,7 +209,10 @@ public:
         }
         return sol::make_object(lua, sol::lua_nil);
     }
+    */
 
+    // TODO
+    /*
     bool instanceExistsScript(sol::object obj) {
         if (obj == sol::lua_nil) {
             return false;
@@ -227,6 +236,7 @@ public:
             return false;
         }
     }
+    */
 
     bool instanceExists(Object::Reference reference) {
         int refId = reference.id;
@@ -263,6 +273,8 @@ public:
         return vec;
     }
 
+    // TODO
+    /*
     sol::object collisionRectangleScript(const Object::Reference& caller, float x1, float y1, float x2, float y2, sol::object type, sol::variadic_args va) {
         float width = x2 - x1;
         float height = y2 - y1;
@@ -320,54 +332,11 @@ public:
     
             return sol::make_object(lua, sol::lua_nil);
         }
-
-
-        /*
-        Precise
-        if (type == sol::lua_nil) {
-            return sol::make_object(lua, sol::lua_nil);
-        }
-
-        float width = x2 - x1;
-        float height = y2 - y1;
-        std::vector<sf::Vector2f> callerPts = {
-            { x1, y1 }, { x1 + width, y1 },
-            { x1 + width, y1 + width }, { x1, y1 + width }
-        };
-
-        if (type.is<Object::Reference>()) {
-            Object::Reference& r = type.as<Object::Reference>();
-            if (!instanceExists(r)) {
-                return sol::make_object(lua, Object::Reference{ -1, sol::make_object(lua, sol::lua_nil) });
-            }
-            auto answer = polygonsIntersect(callerPts, r.object.as<Object*>()->getPoints());
-            if (answer.intersect) {
-                return type;
-            }
-        }
-
-        Object* ignore = nullptr;
-        if (va.size() > 0) {
-            if (va[0].get<bool>() == true) {
-                ignore = caller;
-            }
-        }
-        auto& baseType = type.as<std::unique_ptr<Object>&>();
-        for (auto& i : ids) {
-            if (i.second->extends(baseType.get())) {
-                if (ignore == nullptr || i.second != ignore) {
-                    auto answer = polygonsIntersect(callerPts, i.second->getPoints());
-                    if (answer.intersect) {
-                        return sol::make_object(lua, i.second->makeReference());
-                    }
-                }
-            }
-        }
-
-        return sol::make_object(lua, sol::lua_nil);
-        */
     }
+    */
 
+    // TODO
+    /*
     Object::Reference instancePlaceScript(Object* caller, float x, float y, sol::object type) {
         if (type == sol::lua_nil) {
             return Object::Reference { -1, this->myId, sol::make_object(lua, sol::lua_nil) };
@@ -407,7 +376,10 @@ public:
 
         return Object::Reference { -1, 0, sol::make_object(lua, sol::lua_nil) };
     }
+    */
 
+    // TODO
+    /*
     Object::Reference instanceCreateScript(float x, float y, float depth, BaseObject* baseObject) {
         Object* ptr = instanceCreate(x, y, depth, baseObject);
 
@@ -424,16 +396,17 @@ public:
 
         return ptr->MyReference;
     }
+    */
 
     Object* instanceCreate(float x, float y, float depth, BaseObject* baseObject) {
-        std::unique_ptr<Object> copiedObject = ObjectManager::get().makeInstance(lua, baseObject);
+        std::unique_ptr<Object> copiedObject = ObjectManager::get().makeInstance(L, baseObject);
         
         copiedObject->MyReference.id = currentId++;
         copiedObject->self = baseObject;
         copiedObject->MyReference = Object::Reference {
             copiedObject->MyReference.id,
             this->myId,
-            sol::make_object(lua, copiedObject.get()),
+            // sol::make_object(lua, copiedObject.get()), < TODO
             copiedObject.get()
         };
 
@@ -449,6 +422,8 @@ public:
         return ptr;
     }
 
+    // TODO
+    /*
     std::unordered_map<std::string, sol::object> kvp;
     void setKVP(const std::string& key, sol::main_object obj) {
         auto it = kvp.find(key);
@@ -466,4 +441,5 @@ public:
         }
         return it->second;
     }
+    */
 };

@@ -4,12 +4,16 @@
 #include "tileset.h"
 #include "vendor/json.hpp"
 
-Room::Room(sol::state& lua) : lua(lua) {
+Room::Room(LuaState L) : L(L) {
     roomReference = nullptr;
     camera.room = this;
 }
 
-Room::Room(sol::state& lua, RoomReference* data) : Room(lua) {
+Room::~Room() {
+    std::cout << "Room destroyed\n";
+}
+
+Room::Room(LuaState& L, RoomReference* data) : Room(L) {
     roomReference = data;
 }
 
@@ -35,7 +39,95 @@ Tilemap* RoomGetTilemap(Room* room, const std::string& str) {
 
 Tilemap* RoomGetTilemapList(Room* room) { return nullptr; }
 
-void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
+static int L_ROOM_CREATE(lua_State* L) {
+    LuaState& lua = LuaState::get(L);
+    Room* n = new(lua.newUserdata<Room>()) Room(lua);
+        lua.setMetatable("__mt_Room");
+    return lua.popResultAndReturn();
+}
+
+// Getting values
+template <typename T>
+static int IndexMeta(lua_State* L) {
+    LuaState& lua = LuaState::get(L);
+
+    auto v = (T*)lua_touserdata(L, 1);
+    auto key = lua.getArgCString(2);
+
+    /*
+    if (strcmp(key, "width") == 0) {
+        lua.pushDouble(v->width);
+        return lua.popResultAndReturn();
+    }
+    */
+
+    return 0;
+}
+
+// Setting values
+template <typename T>
+static int NewIndexMeta(lua_State* L) {
+    LuaState& lua = LuaState::get(L);
+
+    auto v = (T*)lua_touserdata(L, 1);
+    auto key = lua.getArgCString(2);
+
+    /*
+    if (strcmp(key, "width") == 0) {
+        v->width = lua.getArgDouble(3);
+        return 0;
+    }
+    */
+
+    return 0;
+}
+
+template <typename T>
+static int GarbageCollect(lua_State* L) {
+    // LuaState& lua = LuaState::get(L);
+    
+    auto v = (T*)lua_touserdata(L, 1);
+    v->~T();
+
+    return 0;
+}
+
+void Room::initializeLua(LuaState& L, const std::filesystem::path &assets) {
+    // Room create function
+    L.pushGlobal("TE"); // stack size 1
+        L.setFunction("room_create", L_ROOM_CREATE); // =
+    L.pop(1);
+
+    L.newMetatable("__mt_Room");
+        L.setFunction("__index", IndexMeta<Room>);
+        L.setFunction("__newindex", NewIndexMeta<Room>);
+        L.setFunction("__gc", GarbageCollect<Room>);
+    L.pop(1);
+
+    L.newMetatable("__mt_Background");
+        L.setFunction("__index", IndexMeta<Background>);
+        L.setFunction("__newindex", NewIndexMeta<Background>);
+        L.setFunction("__gc", GarbageCollect<Background>);
+    L.pop(1);
+
+    L.newMetatable("__mt_Camera");
+        L.setFunction("__index", IndexMeta<Camera>);
+        L.setFunction("__newindex", NewIndexMeta<Camera>);
+        L.setFunction("__gc", GarbageCollect<Camera>);
+    L.pop(1);
+
+    /*for (int i = 0; i < 100; ++i) {
+        luaL_loadstring(L, "local v = ...; print(v)");
+        L.pushDouble(i);
+        lua_pcall(L, 1, LUA_MULTRET, 0);
+        
+        L.doString("print(\"Room create res: \")");
+        L.doString("print(TE.room_create())");
+    }*/
+
+    // L.doString("print(room.width)");
+
+    /*
     sol::table engineEnv = lua["TE"];
 
     Tilemap::initializeLua(lua);
@@ -131,9 +223,12 @@ void Room::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
 
         engineEnv[identifier] = ref;
     }
+    */
 }
 
 void Room::load() {
+    // TODO
+    /*
     using namespace nlohmann;
 
     auto& game = Game::get();
@@ -393,6 +488,7 @@ void Room::load() {
     }
 
     createAndRoomStartEvents();
+    */
 }
 
 // Room ->      "Create"
@@ -400,13 +496,16 @@ void Room::load() {
 // Room ->      Creation Code
 // Room ->      "Room Start"
 // Instances -> "Room Start"
+// TODO
 void Room::createAndRoomStartEvents() {
     auto& game = Game::get();
 
+    /*
     auto create = kvp.find("create");
     if (create != kvp.end()) {
         create->second.as<sol::safe_function>()(this);
     }
+        */
     updateQueue();
 
     for (auto& objUnique : instances) {
@@ -414,11 +513,13 @@ void Room::createAndRoomStartEvents() {
     }
     updateQueue();
 
+    /*
     auto start = kvp.find("room_start");
     if (start != kvp.end()) {
         start->second.as<sol::safe_function>()(this);
         updateQueue();
     }
+        */
 
     for (auto& objUnique : instances) {
         objUnique->runScript("room_start", this);
@@ -532,6 +633,7 @@ void Room::draw(float alpha) {
     }
 }
 
+/*
 void Room::deactivateObject(sol::object object) {
     if (object.is<BaseObject*>()) {
         BaseObject* o = object.as<BaseObject*>();
@@ -579,6 +681,7 @@ void Room::activateObjectRegion(sol::object object, float x1, float y1, float x2
         }
     }
 }
+*/
 
 std::vector<Object::Reference> Room::objectGetList(BaseObject* baseType) {
     std::vector<Object::Reference> v;

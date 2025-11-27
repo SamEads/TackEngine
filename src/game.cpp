@@ -2,7 +2,9 @@
 #include "game.h"
 #include "drawable.h"
 
-void Game::initializeLua(sol::state &state, const std::filesystem::path& assets) {
+void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
+    // TODO:
+    /*
     sol::table engineEnv = lua["TE"];
 
     lua.new_usertype<Game>(
@@ -57,4 +59,5 @@ void Game::initializeLua(sol::state &state, const std::filesystem::path& assets)
         sol::error e = gameRes;
         std::cout << e.what() << "\n";
     }
+    */
 }

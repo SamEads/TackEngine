@@ -2,7 +2,9 @@
 #include "tileset.h"
 #include "vendor/json.hpp"
 
-void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
+void TilesetManager::initializeLua(LuaState& L, const std::filesystem::path& assets) {
+    // TODO
+    /*
     TilesetManager& tsMgr = TilesetManager::get();
     SpriteManager& sprMgr = SpriteManager::get();
     sol::table engineEnv = lua["TE"];
@@ -46,4 +48,5 @@ void TilesetManager::initializeLua(sol::state &lua, const std::filesystem::path&
         tsMgr.tilesets[identifier] = ts;
         engineEnv[identifier] = &tsMgr.tilesets[identifier];
     }
+        */
 }

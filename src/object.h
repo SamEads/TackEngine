@@ -3,10 +3,10 @@
 #include <iostream>
 #include <deque>
 #include <unordered_map>
-#include <sol/sol.hpp>
 #include <SFML/Graphics.hpp>
 #include "vendor/json.hpp"
 #include "sprite.h"
+#include "luainc.h"
 #include "util/mathhelper.h"
 #include "drawable.h"
 #include "objectid.h"
@@ -20,15 +20,12 @@ public:
     struct Reference {
         ObjectId id;
         ObjectId roomId;
-        sol::table table;
         Object* object;
     };
     Reference MyReference;
 
-    sol::state& lua;
-    // std::optional<sol::function> drawFunc;
-    // std::optional<sol::function> stepFunc;
-    std::unordered_map<std::string, sol::object> kvp;
+    LuaState L;
+    int tableReference;
 
     size_t vectorPos;
     float x = 0.0f, y = 0.0f;
@@ -50,7 +47,7 @@ public:
     BaseObject* self = nullptr;
     std::string identifier;
 
-    Object(sol::state& lua) : lua(lua) {
+    Object(LuaState L) : L(L) {
         this->drawsGui = true;
     }
 
@@ -109,6 +106,7 @@ public:
 
     template <typename ... Args>
     bool runScript(const std::string& script, Args... args) {
+    /*
         auto step = kvp.find(script);
         if (step != kvp.end()) {
             auto res = step->second.as<sol::safe_function>()(MyReference, args...);
@@ -121,10 +119,10 @@ public:
             }
         }
         return false;
+    */
+        return true; // TODO 
     }
     std::vector<sf::Vector2f> getPoints() const;
-    void setDyn(const std::string& key, sol::main_object obj);
-    sol::object getDyn(const std::string& ref);
     const bool extends(BaseObject* o) const;
     void draw(Room* room, float alpha) override;
     void beginDraw(Room* room, float alpha) override;
@@ -143,54 +141,17 @@ enum class ConvertType {
     COLOR = 7
 };
 
-inline sol::object FieldCreateFromProperty(const std::string& k, ConvertType type, const nlohmann::json& v, sol::state& lua) {
-    sol::table engineEnv = lua["TE"];
-    if ((type == ConvertType::ASSET || type == ConvertType::STRING) && engineEnv[v.get<std::string>()] != sol::lua_nil) {
-        return engineEnv[v.get<std::string>()];
-    }
-    else if (type == ConvertType::INTEGER) {
-        if (v.is_number()) {
-            return sol::make_object(lua, v.get<int>());
-        }
-        return sol::make_object(lua, std::stoi(v.get<std::string>()));
-    }
-    else if (type == ConvertType::REAL) {
-        if (v.is_number()) {
-            return sol::make_object(lua, v.get<float>());
-        }
-        return sol::make_object(lua, std::stof(v.get<std::string>()));
-    }
-    else if (type == ConvertType::BOOLEAN) {
-        if (v.is_boolean()) {
-            return sol::make_object(lua, v.get<bool>());
-        }
-        bool boolValue = (v.get<std::string>() == "True") ? true : false;
-        return sol::make_object(lua, boolValue);
-    }
-    else if (type == ConvertType::STRING && !v.get<std::string>().empty()) {
-        return sol::make_object(lua, v.get<std::string>());
-    }
-
-    return sol::make_object(lua, sol::lua_nil);
-};
 
 class BaseObject : public Object {
 public:
     std::unordered_map<std::string, std::pair<ConvertType, nlohmann::json>> rawProperties;
-    BaseObject(sol::state& lua) : Object(lua) {}
+    BaseObject(LuaState L) : Object(L) {}
 };
 
 class ObjectManager {
 private:
     std::unordered_map<std::string, std::filesystem::path> scriptPaths;
 public:
-    /*
-    class ScriptedInfo {
-    public:
-        std::unique_ptr<BaseObject>* objectPtr;
-        std::function<std::unique_ptr<Object>(BaseObject*)> create;
-    };
-    */
     std::unordered_map<std::string, BaseObject*> gmlObjects;
 
     static ObjectManager& get() {
@@ -198,7 +159,7 @@ public:
         return om;
     }
 
-    std::unique_ptr<Object> makeInstance(sol::state& lua, BaseObject* baseObject);
+    std::unique_ptr<Object> makeInstance(LuaState& L, BaseObject* baseObject);
 
-    void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+    void initializeLua(LuaState& L, const std::filesystem::path& assets);
 };

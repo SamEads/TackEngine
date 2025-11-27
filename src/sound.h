@@ -4,8 +4,8 @@
 #include <unordered_map>
 #include <thread>
 #include <mutex>
-#include <sol/sol.hpp>
 #include <SFML/Audio.hpp>
+#include "luainc.h"
 
 class SoundAsset {
 public:
@@ -41,7 +41,7 @@ public:
 	std::mutex mutex;
 	std::unordered_map<std::string, SoundBuffer> buffers;
 	std::vector<std::unique_ptr<sf::Sound>> unloading;
-	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+	void initializeLua(LuaState& L, const std::filesystem::path& assets);
 	void update();
     static SoundManager& get() {
         static SoundManager sndMgr;
@@ -55,7 +55,7 @@ public:
 	float volume;
 	sf::Music music;
 	SoundAsset* asset;
-	void initializeLua(sol::state& lua, const std::filesystem::path& assets);
+	void initializeLua(LuaState& L, const std::filesystem::path& assets);
 	static MusicManager& get() {
         static MusicManager musMgr;
         return musMgr;

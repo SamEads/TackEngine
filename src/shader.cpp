@@ -3,7 +3,10 @@
 #include "sprite.h"
 #include "game.h"
 
-void ShaderManager::initializeLua(sol::state& lua) {
+// TODO
+
+void ShaderManager::initializeLua(LuaState L) {
+    /*
     sol::table engineEnv = lua["TE"];
     sol::table shaderModule = engineEnv.create_named("shader");
 
@@ -43,8 +46,10 @@ void ShaderManager::initializeLua(sol::state& lua) {
             Game::get().currentShader = &s->baseShader;
         }
     };
+    */
 }
 
+/*
 void ShaderManager::setUniform(Shader *shader, const std::string &uniform, sol::object data) {
     if (data.is<bool>()) {
         shader->baseShader.setUniform(uniform, data.as<bool>());
@@ -69,3 +74,4 @@ void ShaderManager::setUniform(Shader *shader, const std::string &uniform, sol::
         }
     }
 }
+*/

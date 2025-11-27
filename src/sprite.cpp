@@ -5,6 +5,7 @@
 #include "util/mathhelper.h"
 
 using namespace nlohmann;
+using ColorTable = std::tuple<int, int, int, int>;
 
 float SpriteIndex::getTexelWidth() {
     return 1;
@@ -93,7 +94,8 @@ static inline void DrawSprite(SpriteIndex* spriteIndex, float imageIndex, float 
     game.getRenderTarget()->draw(*(sprite.get()), game.currentShader);
 }
 
-void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
+void SpriteManager::initializeLua(LuaState& L, const std::filesystem::path& assets) {
+    /*
     sol::table engineEnv = lua["TE"];
 
     lua.new_usertype<SpriteIndex>(
@@ -230,7 +232,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
     sol::table gfx = engineEnv.create_named("gfx");
 
 
-    gfx["clear"] = [&](sol::table color) {
+    gfx["clear"] = [&](ColorTable color) {
         Game::get().currentRenderer->clear(MakeColor(color));
     };
 
@@ -269,7 +271,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
             bool result = target.resize(sf::Vector2u { width, height });
             return result;
         },
-        "clear", [&](sf::RenderTexture& target, sol::table color) {
+        "clear", [&](sf::RenderTexture& target, ColorTable color) {
             target.clear(MakeColor(color));
         },
         "draw", [&](sf::RenderTexture& target, float x, float y, float xscale, float yscale, float originx, float originy, float angle) {
@@ -284,7 +286,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         }
     );
 
-    gfx["draw_rectangle"] = [&](float x1, float y1, float x2, float y2, sol::table color) {
+    gfx["draw_rectangle"] = [&](float x1, float y1, float x2, float y2, ColorTable color) {
         sf::RectangleShape rs({ x2 - x1, y2 - y1 });
         rs.setPosition({ x1, y1 });
         rs.setFillColor(MakeColor(color));
@@ -294,7 +296,7 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         game.getRenderTarget()->draw(rs, game.currentShader);
     };
 
-    gfx["draw_circle"] = [&](float x, float y, float r, sol::table color) {
+    gfx["draw_circle"] = [&](float x, float y, float r, ColorTable color) {
         sf::CircleShape cs(r);
         cs.setPosition({ x, y });
         cs.setOrigin({ r, r });
@@ -307,12 +309,12 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
 
     gfx["draw_sprite"] = DrawSprite;
 
-    gfx["draw_sprite_ext"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float rot, sol::table color) {
+    gfx["draw_sprite_ext"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float rot, ColorTable color) {
         if (spriteIndex == nullptr) return;
         spriteIndex->draw(*Game::get().getRenderTarget(), { x, y }, imageIndex, { xscale, yscale }, MakeColor(color), rot);
     };
 
-    gfx["draw_sprite_part"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, int xoff, int yoff, int width, int height, sol::table color) {
+    gfx["draw_sprite_part"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, int xoff, int yoff, int width, int height, ColorTable color) {
         int frameCount = spriteIndex->frames.size();
         int frameIndex = static_cast<int>(floorf(imageIndex)) % frameCount;
 
@@ -332,12 +334,13 @@ void SpriteManager::initializeLua(sol::state& lua, const std::filesystem::path& 
         Game::get().getRenderTarget()->draw(r, Game::get().currentShader);
     };
 
-    gfx["draw_sprite_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, bool keepSpriteOriginPosition, float rot, sol::table color) {
+    gfx["draw_sprite_origin"] = [&](SpriteIndex* spriteIndex, float imageIndex, float x, float y, float xscale, float yscale, float originX, float originY, bool keepSpriteOriginPosition, float rot, ColorTable color) {
         if (spriteIndex == nullptr) return;
         spriteIndex->drawOrigin(*Game::get().getRenderTarget(),
             (keepSpriteOriginPosition) ? sf::Vector2f(x - spriteIndex->originX + originX, y - spriteIndex->originY + originY) : sf::Vector2f(x, y),
             imageIndex, { xscale, yscale }, { originX, originY }, MakeColor(color), rot);
     };
+    */
 }
 
 sf::Texture CreatePaddedTexture(

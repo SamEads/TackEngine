@@ -4,7 +4,6 @@
 #define M_PI   3.14159265358979323846264338327950288
 #endif
 
-#include <sol/sol.hpp>
 #include <SFML/Graphics.hpp>
 
 inline float Rad2Deg(float radian) {
@@ -29,10 +28,10 @@ inline float PointDistance(float x1, float y1, float x2, float y2) {
     return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2) * 1.0);
 }
 
-inline sf::Color MakeColor(sol::table c) {
-    uint8_t r = c.get<int>(1);
-    uint8_t g = c.get<int>(2);
-    uint8_t b = c.get<int>(3);
-    uint8_t a = c.get<int>(4);
+inline sf::Color MakeColor(std::tuple<int, int, int, int> c) {
+    uint8_t r = std::get<0>(c);
+    uint8_t g = std::get<1>(c);
+    uint8_t b = std::get<2>(c);
+    uint8_t a = std::get<3>(c);
     return { r, g, b, a };
 };

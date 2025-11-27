@@ -1,7 +1,7 @@
 #pragma once
 
-#include <sol/sol.hpp>
 #include <SFML/Graphics.hpp>
+#include "luainc.h"
 
 class Shader {
 public:
@@ -15,6 +15,6 @@ public:
         static ShaderManager sm;
         return sm;
     }
-	void initializeLua(sol::state& lua);
-    void setUniform(Shader* shader, const std::string& uniform, sol::object data);
+	void initializeLua(LuaState Lua);
+    // void setUniform(Shader* shader, const std::string& uniform, sol::object data);
 };

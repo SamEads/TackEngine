@@ -8,22 +8,6 @@
 using namespace nlohmann;
 
 std::vector<sf::Vector2f> Object::getPoints() const {
-    auto it = kvp.find("points");
-    if (it != kvp.end()) {
-        sol::table points = it->second.as<sol::table>();
-
-        std::vector<sf::Vector2f> v;
-        v.reserve(points.size());
-
-        for (auto& point : points) {
-            auto t = point.second.as<sol::table>();
-            float px = t.get<float>("x");
-            float py = t.get<float>("y");
-            v.push_back({ px + x, py + y });
-        }
-        return v;
-    }
-
     if (imageAngle == 0) {
         sf::FloatRect rect = getRectangle();
         return std::vector<sf::Vector2f> {
@@ -77,24 +61,6 @@ std::vector<sf::Vector2f> Object::getPoints() const {
     return transformed;
 }
 
-void Object::setDyn(const std::string &key, sol::main_object obj) {
-    auto it = kvp.find(key);
-    if (it == kvp.end()) {
-        kvp.insert({ key, sol::object(std::move(obj)) });
-    }
-    else {
-        it->second = sol::object(std::move(obj));
-    }
-}
-
-sol::object Object::getDyn(const std::string &ref) {
-    auto it = kvp.find(ref);
-    if (it == kvp.end()) {
-        return sol::lua_nil;
-    }
-    return it->second;
-}
-
 const bool Object::extends(BaseObject *o) const {
     if (o == nullptr) return false;
     if (self == o) return true;
@@ -119,12 +85,6 @@ const bool Object::extends(BaseObject *o) const {
 }
 
 void Object::draw(Room *room, float alpha) {
-    auto it = kvp.find("draw");
-    if (it != kvp.end()) {
-        it->second.as<sol::function>()(MyReference, room, alpha);
-        return;
-    }
-
     if (!spriteIndex) return;
     
 	float interpX = lerp(xPrevRender, x, alpha);
@@ -147,7 +107,7 @@ void Object::drawGui(Room *room, float alpha) {
 static BaseObject* ObjectCreate(
     const std::string& identifier,
     BaseObject* extends,
-    sol::state& lua, const std::filesystem::path& assets,
+    LuaState& L, const std::filesystem::path& assets,
     const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths)
 {
     auto& objMgr = ObjectManager::get();
@@ -160,40 +120,40 @@ static BaseObject* ObjectCreate(
         }
     }
 
-    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>(lua);
+    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>(L);
 
     if (extends != nullptr) {
         newObject->parent = extends;
+        /*
         for (auto& prop : extends->rawProperties) {
             newObject->rawProperties[prop.first] = { prop.second.first, prop.second.second };
         }
         for (std::pair p : extends->kvp) {
             newObject->kvp.insert(p);
         }
+        */
     }
 
+    /*
     sol::object globalObject = sol::make_object(lua, std::move(newObject));
     std::unique_ptr<BaseObject>& memPtr = globalObject.as<std::unique_ptr<BaseObject>&>();
+    */
 
     if (!identifier.empty()) {
-        // lua["TE"][identifier] = globalObject;
-        gmlObjects[identifier] = memPtr.get();
+        // gmlObjects[identifier] = memPtr.get();
     }
 
-    memPtr->self = memPtr.get();
-    memPtr->identifier = identifier;
+    // memPtr->self = memPtr.get();
+    // memPtr->identifier = identifier;
 
     // Run script for object
     auto it = objectScriptPaths.find(identifier);
     if (it != objectScriptPaths.end()) {
-        auto res = LuaScript(lua, it->second);
-        if (!res.valid()) {
-            sol::error e = res;
-            std::cout << e.what() << "\n";
-        }
+        auto res = LuaScript(L, it->second);
     }
 
-    return memPtr.get();
+    return NULL;
+    // return memPtr.get();
 }
 
 ConvertType deduceType (const json& v) {
@@ -212,7 +172,7 @@ void addJSONPropsToObject(const json& props, BaseObject* obj) {
 
 static void ObjectTemplateCreateRecursive(
     std::string identifier,
-    sol::state& lua,
+    LuaState L,
     const std::filesystem::path& assets,
     const std::unordered_map<std::string, std::filesystem::path>& objectScriptPaths) {
     // potentially a parent class- ignore
@@ -234,14 +194,14 @@ static void ObjectTemplateCreateRecursive(
         std::string parentIdentifier = j["parent"];
         auto it = objMgr.gmlObjects.find(parentIdentifier);
         if (it == objMgr.gmlObjects.end()) {
-            ObjectTemplateCreateRecursive(parentIdentifier, lua, assets, objectScriptPaths);
+            ObjectTemplateCreateRecursive(parentIdentifier, L, assets, objectScriptPaths);
         }
         BaseObject* parentObj = objMgr.gmlObjects.at(parentIdentifier);
-        obj = ObjectCreate(identifier, parentObj, lua, assets, objectScriptPaths);
+        obj = ObjectCreate(identifier, parentObj, L, assets, objectScriptPaths);
         addJSONPropsToObject(j["properties"], obj);
     }
     else {
-        obj = ObjectCreate(identifier, nullptr, lua, assets, objectScriptPaths);
+        obj = ObjectCreate(identifier, nullptr, L, assets, objectScriptPaths);
         addJSONPropsToObject(j["properties"], obj);
     }
 
@@ -252,9 +212,9 @@ static void ObjectTemplateCreateRecursive(
     }
 }
 
-std::unique_ptr<Object> ObjectManager::makeInstance(sol::state& lua, BaseObject* baseObject) {
+std::unique_ptr<Object> ObjectManager::makeInstance(LuaState& L, BaseObject* baseObject) {
     if (baseObject == NULL) {
-        auto copied = std::make_unique<Object>(lua);
+        auto copied = std::make_unique<Object>(L);
         return copied;
     }
 
@@ -272,43 +232,54 @@ std::unique_ptr<Object> ObjectManager::makeInstance(sol::state& lua, BaseObject*
             BaseObject* p = parents.front();
             parents.pop_front();
 
+            /*
             for (auto& v : p->kvp) {
                 copied->kvp.insert(v);
             }
+            */
 
             if (p->rawProperties.size() > 0) {
+                /*
                 sol::table t;
                 if (copied->kvp.find("properties") != copied->kvp.end()) {
                     t = copied->getDyn("properties");
                 } else {
                     t = copied->kvp.insert({ "properties", sol::table(lua, sol::create) }).first->second;
                 }
+                */
                 for (auto& [k, v] : p->rawProperties) {
+                    /*
                     t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
+                    */
                 }
             }
 
         }
     }
     
+    /*
     for (auto& v : baseObject->kvp) {
         copied->setDyn(v.first, v.second);
     }
+    */
 
     if (baseObject->rawProperties.size() > 0) {
+        /*
         sol::table t;
         if (copied->kvp.find("properties") != copied->kvp.end()) {
             t = copied->getDyn("properties");
         } else {
             t = copied->kvp.insert({ "properties", sol::table(lua, sol::create) }).first->second;
         }
+        */
         for (auto& [k, v] : baseObject->rawProperties) {
-            t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
+            // t[k] = FieldCreateFromProperty(k, v.first, v.second, lua);
         }
     }
     return copied;
 }
 
+/*
 static inline float w_bb_left(const Object::Reference& r) { return r.object->bboxLeft(); }
 static inline float w_bb_right(const Object::Reference& r) { return r.object->bboxRight(); }
 static inline float w_bb_top(const Object::Reference& r) { return r.object->bboxTop(); }
@@ -352,8 +323,10 @@ WRAPPER_GET(x_previous, xPrev, float)
 WRAPPER_GET(y_previous, yPrev, float)
 WRAPPER_GET(x_previous_render, xPrevRender, float)
 WRAPPER_GET(y_previous_render, yPrevRender, float)
+*/
 
-void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &assets) {
+void ObjectManager::initializeLua(LuaState& L, const std::filesystem::path &assets) {
+    /*
     sol::table engineEnv = lua["TE"];
 
     auto objtype = lua.new_usertype<Object>(
@@ -493,6 +466,7 @@ void ObjectManager::initializeLua(sol::state &lua, const std::filesystem::path &
             return std::move(newObj);
         }
     };
+    */
 
     /*
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "objects")) {

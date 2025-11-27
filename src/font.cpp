@@ -2,7 +2,9 @@
 #include "util/mathhelper.h"
 #include "game.h"
 
-void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
+void FontManager::initializeLua(LuaState& L, std::filesystem::path assets) {
+    // TODO
+    /*
     sol::table engineEnv = lua["TE"];
 
     std::filesystem::path fontsDirectory = assets / "fonts";
@@ -57,4 +59,5 @@ void FontManager::initializeLua(sol::state& lua, std::filesystem::path assets) {
             Game::get().getRenderTarget()->draw(t);
         }
     };
+    */
 }

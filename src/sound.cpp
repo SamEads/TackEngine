@@ -5,7 +5,8 @@
 
 using namespace nlohmann;
 
-void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& assets) {
+void SoundManager::initializeLua(LuaState& L, const std::filesystem::path& assets) {
+	/*
 	sol::table engineEnv = lua["TE"];
 	sol::table soundModule = engineEnv.create_named("sound");
 
@@ -193,6 +194,7 @@ void SoundManager::initializeLua(sol::state &lua, const std::filesystem::path& a
 			}
 		}
     };
+	*/
 }
 
 void SoundManager::update() {
@@ -230,7 +232,8 @@ void SoundManager::update() {
 	}
 }
 
-void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& assets) {
+void MusicManager::initializeLua(LuaState& L, const std::filesystem::path& assets) {
+	/*
 	sol::table engineEnv = lua["TE"];
 	sol::table musicModule = engineEnv.create_named("music");
 
@@ -279,4 +282,5 @@ void MusicManager::initializeLua(sol::state& lua, const std::filesystem::path& a
     musicModule["set_pitch"] = [&](float pitch) {
 		music.setPitch(pitch);
     };
+	*/
 }

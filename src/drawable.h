@@ -1,11 +1,8 @@
 #pragma once
 
-#include <sol/sol.hpp>
 #include <filesystem>
 
 class Room;
-
-sol::protected_function_result LuaScript(sol::state& lua, std::filesystem::path p);
 
 class Drawable {
 public:
