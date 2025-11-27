@@ -478,7 +478,7 @@ void Room::timestep() {
 void Room::setView(float cx, float cy) {
     auto target = Game::get().getRenderTarget();
 
-    sf::View view({ { 0, 0 }, { camera.width, camera.height } });
+    sf::View view(sf::FloatRect { { 0.0f, 0.0f }, { camera.width, camera.height } });
 
     view.setCenter({ cx + camera.width / 2.0f, cy + camera.height / 2.0f });
     target->setView(view);

@@ -14,8 +14,12 @@ extern "C" {
 #include "shader.h"
 #include "sound.h"
 #include "font.h"
+
+#ifdef __WIN32
 #include <ProcessInfo.h>
 #include <SystemInformation.h>
+#endif
+
 #define GMC_EMBEDDED
 #define GMCONVERT_IMPLEMENTATION
 #include "util/gmconvert.h"
@@ -82,13 +86,21 @@ int main() {
 
     InitializeLuaEnvironment(lua);
 
+#ifdef __WIN32
     ProcessInfo process;
     SystemInformation sys_info;
+#endif
 
+#ifdef __WIN32
     game.engineEnv["game"]["get_memory"] = [&process]() {
         auto memory = process.GetMemoryUsage() / 1'000;
         return memory;
     };
+#else
+    game.engineEnv["game"]["get_memory"] = []() {
+        return 0;
+    };
+#endif
 
     SoundManager& sndMgr = SoundManager::get();
     sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
@@ -126,7 +138,7 @@ int main() {
         view.setCenter({ dispSize.x / 2.0f, dispSize.y / 2.0f });
         window->setView(view);
         
-        auto& drawFunc = game.getKVP("draw");
+        sol::object drawFunc = game.getKVP("draw");
         if (drawFunc != sol::lua_nil) {
             drawFunc.as<sol::function>()(game, alpha);
         }
