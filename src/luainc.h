@@ -1,185 +1,151 @@
 extern "C" {
+#ifdef USE_LUA_JIT
+#include <luajit.h>
+#endif
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
 }
 
+#define ENGINE_ENV "TE"
+
+#include <SFML/Graphics.hpp>
+#include <unordered_map>
 #include <filesystem>
+#include <iostream>
 
 #ifndef LUAINC_H
 #define LUAINC_H
-#include <iostream>
-struct LuaState;
+
+#ifdef USE_LUA_JIT
+
+inline int lua_absindex(lua_State* L, int idx) {
+    if (idx > 0 || idx <= LUA_REGISTRYINDEX) return idx;
+    return lua_gettop(L) + idx + 1;
+}
+
+inline int lua_geti(lua_State* L, int idx, lua_Integer n) {
+    int abs = lua_absindex(L, idx);
+    lua_pushinteger(L, n);
+    lua_gettable(L, abs);
+    return lua_type(L, -1);
+}
+
+#define lua_rawlen lua_objlen
+
+#else
+
+#endif
+
+inline int lua_lazycall(lua_State* L, int argCount, int retCount) {
+    int res = lua_pcall(L, argCount, retCount, 0); // -1 TE
+    if (res != LUA_OK) {
+        luaL_traceback(L, L, lua_tostring(L, -1), 1);
+        const char* tb = lua_tostring(L, -1);
+        std::cout << tb << "\n";
+        lua_pop(L, 1);
+    }
+    return res;
+}
+
+inline double lua_tonumbertable(lua_State* L, int idx, lua_Integer n) {
+    lua_rawgeti(L, idx, n);
+    double num = static_cast<double>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+    return num;
+}
+
+inline sf::Color lua_tocolor(lua_State* L, int idx) {
+    lua_rawgeti(L, idx, 1); uint8_t r = static_cast<std::uint8_t>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_rawgeti(L, idx, 2); uint8_t g = static_cast<std::uint8_t>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_rawgeti(L, idx, 3); uint8_t b = static_cast<std::uint8_t>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_rawgeti(L, idx, 4); uint8_t a = static_cast<std::uint8_t>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    return sf::Color(r, g, b, a);
+}
+
+template <typename T>
+T* lua_toclass(lua_State* L, int idx) {
+    lua_getfield(L, idx, "__cpp_ptr");
+    int type = lua_type(L, -1);
+        if (type == LUA_TNIL) {
+            lua_pop(L, 1);
+            return nullptr;
+        }
+        T* item = static_cast<T*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    return item;
+}
+
+template <typename T>
+T* lua_testclass(lua_State* L, int idx, const char* mt) {
+    lua_getmetatable(L, idx);     // -1: obj mt
+    luaL_getmetatable(L, mt);   // -1: registry mt, obj mt
+    int equal = lua_rawequal(L, -1, -2);
+    lua_pop(L, 2);
+    if (!equal) {
+        return nullptr;
+    }
+    lua_getfield(L, idx, "__cpp_ptr");
+    int type = lua_type(L, -1);
+        if (type == LUA_TNIL) {
+            lua_pop(L, 1);
+            return nullptr;
+        }
+        T* item = static_cast<T*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    return item;
+}
+
+template <typename T>
+bool lua_isclass(lua_State* L, int idx, const char* mt) {
+    lua_getmetatable(L, idx);     // -1: obj mt
+    luaL_getmetatable(L, mt);   // -1: registry mt, obj mt
+    int equal = lua_rawequal(L, -1, -2);
+    lua_pop(L, 2);
+    if (!equal) {
+        return false;
+    }
+    lua_getfield(L, idx, "__cpp_ptr");
+    int type = lua_type(L, -1);
+        if (type == LUA_TNIL) {
+            lua_pop(L, 1);
+            return false;
+        }
+    lua_pop(L, 1);
+    return true;
+}
+
+template <typename T>
+T* lua_toclassfromref(lua_State* L, int idx) {
+    lua_getfield(L, idx, "__cpp_ptr");
+    int type = lua_type(L, -1);
+        if (type == LUA_TNIL) {
+            lua_pop(L, 1);
+            return nullptr;
+        }
+        T* item = static_cast<T*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    return item;
+}
+
+inline bool lua_getfieldexists(lua_State* L, int idx, const char* str) {
+    lua_getfield(L, idx, str);
+    int type = lua_type(L, -1);
+    lua_pop(L, 1);
+    return type != LUA_TNIL;
+}
+
 struct LuaState {
     lua_State* l;
-    int stack = 0;
+    
     operator lua_State*() const { return l; }
 
     static LuaState& get(lua_State* l) {
-        int type = lua_getfield(l, LUA_REGISTRYINDEX, "__cppstate");
+        lua_getfield(l, LUA_REGISTRYINDEX, "__cppstate");
         LuaState& lua = *(LuaState*)lua_touserdata(l, -1);
         lua_pop(l, 1);
         return lua;
     }
-
-    // Stack +1
-    void pushCFunction(lua_CFunction fn) {
-        lua_pushcfunction(l, fn);
-        stack++;
-    }
-
-    // Slots start at 1
-    std::string getArgString(int slot) {
-        const char* key = luaL_checkstring(l, slot);
-        return key;
-    }
-
-    // Slots start at 1
-    const char* getArgCString(int slot) {
-        const char* key = luaL_checkstring(l, slot);
-        return key;
-    }
-
-    // Slots start at 1
-    double getArgDouble(int slot) {
-        return luaL_checknumber(l, slot);
-    }
-
-    // Stack =
-    template <typename T>
-    T* getArgUserData(int slot, const std::string& tname) {
-        void* ud = luaL_checkudata(l, slot, tname.c_str());
-        return static_cast<T*>(ud);
-    }
-
-    // Stack =
-    // Puts function on -1
-    void setFunction(const std::string& str, lua_CFunction value) {
-        pushCFunction(value);
-        setField(-2, str.c_str());
-    }
-
-    // Stack -1
-    void addTableToTable(const std::string& str) {
-        setField(-2, str.c_str());
-    }
-
-    void pushString(const std::string& str) {
-        lua_pushstring(l, str.c_str());
-        stack++;
-    }
-
-    void pushDouble(double n) {
-        lua_pushnumber(l, n);
-        stack++;
-    }
-
-    int popResultAndReturn() {
-        int st = stack;
-        stack = 0;
-        return st;
-    }
-
-    // Stack --
-    void setTableCFunction(const std::string& str, lua_CFunction value) {
-        pushString(str.c_str());
-        pushCFunction(value);
-        
-        lua_settable(l, -3);
-        stack -= 2;
-    }
-
-    void setTableDouble(const std::string& str, double value) {
-        pushString(str.c_str());
-        pushDouble(value);
-
-        lua_settable(l, -3);
-        stack -= 2;
-    }
-
-    // Returns the address of the block of memory casted to pointer T
-    // Stack +1
-    template <typename T>
-    void* newUserdata() {
-        void* n = lua_newuserdata(l, sizeof(T));
-        stack++;
-        return n;
-    }
-
-    // Stack -- (gets and sets)
-    void setMetatable(const std::string& str) {
-        luaL_setmetatable(l, str.c_str());
-    }
-
-    void doString(const std::string& str) {
-        luaL_dostring(l, str.c_str());
-    }
-
-    // Stack +1
-    void pushGlobal(const std::string& str) {
-        lua_getglobal(l, str.c_str());
-        stack++;
-    }
-
-    // Stack -1
-    void setGlobal(const std::string& glob) {
-        lua_setglobal(l, glob.c_str());
-        stack--;
-    }
-
-    // Stack +1
-    void getField(int idx, const std::string& f) {
-        lua_getfield(l, idx, f.c_str());
-        stack++;
-    }
-
-    // Stack -1
-    void setField(int index, const std::string& str) {
-        lua_setfield(l, index, str.c_str());
-        stack--;
-    }
-
-    void pop(int amt) {
-        lua_pop(l, amt);
-        stack -= amt;
-    }
-    
-    void newTable() {
-        lua_newtable(l);
-        stack++;
-    }
-
-    class LuaObject {
-
-    };
-
-    // Stack +1
-    void newMetatable(const std::string& id) {
-        luaL_newmetatable(l, id.c_str());
-        stack++;
-    }
-
-    void checkpoint() {
-        printf("[CHECKPOINT STACK]: %d\n", stack);
-    }
-    struct LuaData {
-        LuaState* ls;
-        LuaData(LuaState* ls) {
-            this->ls = ls;
-        }
-
-        std::string globalToString(const std::string& s) {
-            ls->pushGlobal(s);
-            std::string res = luaL_tolstring(ls->l, -1, NULL);
-            ls->pop(1);
-            return res;
-        }
-    };
-    LuaData D = LuaData(this);
 };
-
-inline bool LuaScript(LuaState& L, const std::filesystem::path& p) {
-    return true;
-}
 
 #endif

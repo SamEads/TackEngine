@@ -21,12 +21,6 @@ public:
 	std::unique_ptr<sf::Sound> sound;
 };
 
-class SoundInstanceReference {
-public:
-	uint64_t id;
-	SoundBuffer* buffer;
-};
-
 class SoundBuffer {
 public:
 	sf::SoundBuffer buffer;

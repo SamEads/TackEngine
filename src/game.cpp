@@ -2,62 +2,90 @@
 #include "game.h"
 #include "drawable.h"
 
+#include <ProcessInfo.h>
+#include <SystemInformation.h>
+
+ProcessInfo process;
+SystemInformation sys_info;
+
 void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
-    // TODO:
-    /*
-    sol::table engineEnv = lua["TE"];
-
-    lua.new_usertype<Game>(
-        "Game",         sol::no_constructor,
-        "fps",          sol::readonly(&Game::fps),
-        sol::meta_function::index,      &Game::getKVP,
-        sol::meta_function::new_index,  &Game::setKVP
-    );
+    lua_getglobal(L, ENGINE_ENV);
     
-    engineEnv["game"] = this;
+        // WINDOW
+        lua_newtable(L);
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                const char* caption = luaL_checkstring(L, 1);
+                Game::get().window->setTitle(caption);
+                return 0;
+            });
+            lua_setfield(L, -2, "set_caption");
 
-    engineEnv["game"]["set_size"] = [&](Game* self, unsigned int width, unsigned int height) {
-        unsigned int lastCW = self->canvasWidth;
-        unsigned int lastCH = self->canvasHeight;
-        self->canvasWidth = std::max(1u, width);
-        self->canvasHeight = std::max(1u, height);
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                float width = luaL_checknumber(L, 1);
+                float height = luaL_checknumber(L, 2);
+                Game::get().window->setSize({ static_cast<unsigned int>(width), static_cast<unsigned int>(height) });
+                return 0;
+            });
+            lua_setfield(L, -2, "set_size");
 
-    engineEnv["game"]["set_tick_speed"] = [&](Game* self, double tickSpeed) {
-        self->timer.setTickRate(tickSpeed);
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                float size = Game::get().window->getSize().x;
+                lua_pushnumber(L, size);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_width");
 
-    auto windowModule = engineEnv.create_named("window");
-    
-    windowModule["set_caption"] = [&](const std::string& caption) {
-        window->setTitle(caption);
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                float size = Game::get().window->getSize().y;
+                lua_pushnumber(L, size);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_height");
 
-    windowModule["set_size"] = [&](unsigned int width, unsigned int height) {
-        window->setSize({ width, height });
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                sf::Vector2u displaySize = sf::VideoMode::getDesktopMode().size;
+                sf::Vector2u windowSize = Game::get().window->getSize();
+                Game::get().window->setPosition(sf::Vector2i {
+                    static_cast<int>((displaySize.x / 2) - (windowSize.x / 2)),
+                    static_cast<int>((displaySize.y / 2) - (windowSize.y / 2))
+                });
+                return 0;
+            });
+            lua_setfield(L, -2, "center");
+        lua_setfield(L, -2, "window");
 
-    windowModule["get_width"] = [&]() {
-        return Game::get().window->getSize().x;
-    };
+        // RUNTIME
+        lua_newtable(L);
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                float tickSpeed = luaL_checknumber(L, 1);
+                Game::get().timer.setTickRate(tickSpeed);
+                return 0;
+            });
+            lua_setfield(L, -2, "set_tick_rate");
 
-    windowModule["get_height"] = [&]() {
-        return Game::get().window->getSize().y;
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                auto memory = process.GetMemoryUsage() / 1'000;
+                lua_pushnumber(L, memory);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_memory");
+            
+            lua_newtable(L);
+                lua_pushcfunction(L, [](lua_State* L) -> int {
+                    const char* key = lua_tostring(L, 2);
 
-    windowModule["center"] = [&]() {
-        sf::Vector2u displaySize = sf::VideoMode::getDesktopMode().size;
-        sf::Vector2u windowSize = Game::get().window->getSize();
-        window->setPosition(sf::Vector2i {
-            static_cast<int>((displaySize.x / 2) - (windowSize.x / 2)),
-            static_cast<int>((displaySize.y / 2) - (windowSize.y / 2))
-        });
-    };
+                    if (strcmp(key, "fps") == 0) {
+                        lua_pushnumber(L, Game::get().fps);
+                        return 1;
+                    }
 
-    auto gameRes = LuaScript(lua, std::filesystem::path(assets / "scripts" / "game.lua"));
-    if (!gameRes.valid()) {
-        sol::error e = gameRes;
-        std::cout << e.what() << "\n";
-    }
-    */
+                    lua_pushnil(L);
+                    return 1;
+                });
+                lua_setfield(L, -2, "__index");
+            lua_setmetatable(L, -2);
+
+        lua_setfield(L, -2, "runtime");
+
+    lua_pop(L, 1);
 }

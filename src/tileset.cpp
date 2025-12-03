@@ -4,11 +4,9 @@
 
 void TilesetManager::initializeLua(LuaState& L, const std::filesystem::path& assets) {
     // TODO
-    /*
     TilesetManager& tsMgr = TilesetManager::get();
-    SpriteManager& sprMgr = SpriteManager::get();
-    sol::table engineEnv = lua["TE"];
 
+    lua_getglobal(L, ENGINE_ENV);
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "tilesets")) {
         if (!it.is_regular_file()) {
             continue;
@@ -28,11 +26,11 @@ void TilesetManager::initializeLua(LuaState& L, const std::filesystem::path& ass
         ts.padding = 2;
         sf::Image src;
         std::string n = j["name"];
-        SpriteManager::get().sprites[j["sprite"]] = {};
+        GFX::sprites[j["sprite"]] = {};
         bool loaded = src.loadFromFile(assets / "managed" / "sprites" / j["sprite"].get<std::string>() / "frames.png");
         ts.tileCountX = (src.getSize().x - ts.offsetX + ts.separationX) / (ts.tileWidth + ts.separationX);
         ts.tileCountY = (src.getSize().y - ts.offsetY + ts.separationY) / (ts.tileHeight + ts.separationY);
-        ts.tex = CreatePaddedTexture(
+        ts.tex = GFX::CreatePaddedTexture(
             src,
             ts.tileWidth,
             ts.tileHeight,
@@ -46,7 +44,8 @@ void TilesetManager::initializeLua(LuaState& L, const std::filesystem::path& ass
             nullptr
         );
         tsMgr.tilesets[identifier] = ts;
-        engineEnv[identifier] = &tsMgr.tilesets[identifier];
+        lua_pushlightuserdata(L, &tsMgr.tilesets[identifier]);
+        lua_setfield(L, -2, identifier.c_str());
     }
-        */
+    lua_pop(L, 1);
 }

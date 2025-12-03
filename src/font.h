@@ -6,7 +6,7 @@
 class Font {
 public:
     bool isSpriteFont;
-    SpriteIndex* spriteIndex;
+    GFX::Sprite* spriteIndex;
     sf::Font fontIndex;
     std::unordered_map<char, int> charMap;
 };

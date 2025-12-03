@@ -10,7 +10,11 @@ Room::Room(LuaState L) : L(L) {
 }
 
 Room::~Room() {
-    std::cout << "Room destroyed\n";
+    for (auto& i : instances) {
+        if (!i->hasTable) continue;
+        luaL_unref(L, LUA_REGISTRYINDEX, i->tableReference);
+        i->hasTable = false;
+    }
 }
 
 Room::Room(LuaState& L, RoomReference* data) : Room(L) {
@@ -26,8 +30,6 @@ Background* RoomGetBG(Room* room, const std::string& str) {
     return nullptr;
 }
 
-Background* RoomGetBGList(Room* room) { return nullptr; }
-
 Tilemap* RoomGetTilemap(Room* room, const std::string& str) {
     for (auto& it : room->tilemaps) {
         if (it->name == str) {
@@ -37,178 +39,814 @@ Tilemap* RoomGetTilemap(Room* room, const std::string& str) {
     return nullptr;
 }
 
-Tilemap* RoomGetTilemapList(Room* room) { return nullptr; }
+static int RoomGet(lua_State* L) {
+    const char* key = luaL_checkstring(L, 2);
+    Room* room = lua_toclass<Room>(L, 1);
+
+    if (strcmp("width", key) == 0) {
+        lua_pushnumber(L, room->width);
+        return 1;
+    }
+
+    if (strcmp("height", key) == 0) {
+        lua_pushnumber(L, room->height);
+        return 1;
+    }
+
+    if (strcmp("render_x", key) == 0) {
+        lua_pushnumber(L, room->renderCameraX);
+        return 1;
+    }
+
+    if (strcmp("render_y", key) == 0) {
+        lua_pushnumber(L, room->renderCameraY);
+        return 1;
+    }
+
+    lua_pushvalue(L, 2); // push key
+    lua_rawget(L, 1); // consumes key
+
+    if (!lua_isnil(L, -1)) {
+        return 1;
+    }
+
+    lua_pop(L, 1);
+    lua_getmetatable(L, 1); // mt
+    lua_pushvalue(L, 2); // key,mt
+    lua_gettable(L, -2); // val,mt
+    if (!lua_isnil(L, -1)) {
+        lua_remove(L, -2); // remove mt
+        return 1;
+    }
+
+    lua_pop(L, 2);
+    return 0;
+}
+
+int RoomStep(lua_State* L) {
+    Room* room = lua_toclass<Room>(L, 1);
+
+    room->camera.xPrev = room->camera.x;
+    room->camera.yPrev = room->camera.y;
+
+    Game& game = Game::get();
+    room->camera.width = game.canvasWidth;
+    room->camera.height = game.canvasHeight;
+
+    for (auto& i : room->instances) {
+        if (i->active) {
+            i->xPrev = i->x;
+            i->yPrev = i->y;
+            i->xPrevRender = i->x;
+            i->yPrevRender = i->y;
+            if (i->incrementImageSpeed) {
+                i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
+            }
+        }
+    }
+
+    // Begin Step
+    for (auto& instance : room->instances) {
+        if (instance->active && instance->hasTable) {
+            instance->runScriptTimestep("begin_step", 1);
+        }
+    }
+    room->updateQueue();
+
+    // Step
+    for (auto& instance : room->instances) {
+        if (instance->active && instance->hasTable) {
+            instance->runScriptTimestep("step", 1);
+        }
+    }
+    room->updateQueue();
+
+    // End Step
+    for (auto& instance : room->instances) {
+        if (instance->active) {
+            instance->runScriptTimestep("end_step", 1);
+        }
+    }
+    room->updateQueue();
+
+    return 0;
+}
+
+int RoomDraw(lua_State* L) {
+    Room* room = lua_toclass<Room>(L, 1);
+
+    float alpha = luaL_checknumber(L, 2);
+
+    room->drawables.clear();
+
+    int count = 0;
+    for (auto& i : room->instances) {
+        if (i->visible && i->active && dynamic_cast<Tilemap*>(i.get())) {
+            count++;
+        }
+    }
+    for (auto& i : room->instances) {
+        if (i->visible && i->active) {
+            room->drawables.push_back(i.get());
+        }
+    }
+
+    std::sort(room->drawables.begin(), room->drawables.end(), [](const Drawable* a, const Drawable* b) {
+        return a->depth > b->depth;
+    });
+
+    for (auto& d : room->drawables) {
+        if (!d->active || !d->visible) continue;
+        if (d->hasTable) {
+            if (!d->runScriptDraw("begin_draw", 1, alpha)) {
+                d->beginDraw(room, alpha);
+            }
+        }
+        else {
+            d->beginDraw(room, alpha);
+        }
+    }
+
+    for (auto& d : room->drawables) {
+        if (!d->active || !d->visible) continue;
+        if (d->hasTable) {
+            if (!d->runScriptDraw("draw", 1, alpha)) {
+                d->draw(room, alpha);
+            }
+        }
+        else {
+            d->draw(room, alpha);
+        }
+    }
+    
+    for (auto& d : room->drawables) {
+        if (!d->active || !d->visible) continue;
+        if (d->hasTable) {
+            if (!d->runScriptDraw("end_draw", 1, alpha)) {
+                d->endDraw(room, alpha);
+            }
+        }
+        else {
+            d->endDraw(room, alpha);
+        }
+    }
+
+    auto target = Game::get().getRenderTarget();
+    target->setView(target->getDefaultView());
+
+    for (auto& d : room->drawables) {
+        if (!d->active || !d->visible) continue;
+        if (d->hasTable) {
+            if (!d->runScriptDraw("draw_gui", 1, alpha)) {
+                d->drawGui(room, alpha);
+            }
+        }
+        else {
+            d->drawGui(room, alpha);
+        }
+    }
+
+    return 0;
+}
+
+int RoomSet(lua_State* L) {
+    const char* key = luaL_checkstring(L, 2);
+    Room* room = lua_toclass<Room>(L, 1);
+
+    if (strcmp(key, "width") == 0) {
+        room->width = luaL_checknumber(L, 3);
+        return 0;
+    }
+
+    lua_pushvalue(L, 2);    // k
+    lua_pushvalue(L, 3);    // v
+    lua_rawset(L, 1);
+
+    return 0;
+}
+
+static int RoomGarbageCollect(lua_State* L) {
+
+    LuaState& lua = LuaState::get(L);
+
+    return 0;
+}
 
 static int L_ROOM_CREATE(lua_State* L) {
     LuaState& lua = LuaState::get(L);
-    Room* n = new(lua.newUserdata<Room>()) Room(lua);
-        lua.setMetatable("__mt_Room");
-    return lua.popResultAndReturn();
-}
-
-// Getting values
-template <typename T>
-static int IndexMeta(lua_State* L) {
-    LuaState& lua = LuaState::get(L);
-
-    auto v = (T*)lua_touserdata(L, 1);
-    auto key = lua.getArgCString(2);
-
-    /*
-    if (strcmp(key, "width") == 0) {
-        lua.pushDouble(v->width);
-        return lua.popResultAndReturn();
-    }
-    */
-
-    return 0;
-}
-
-// Setting values
-template <typename T>
-static int NewIndexMeta(lua_State* L) {
-    LuaState& lua = LuaState::get(L);
-
-    auto v = (T*)lua_touserdata(L, 1);
-    auto key = lua.getArgCString(2);
-
-    /*
-    if (strcmp(key, "width") == 0) {
-        v->width = lua.getArgDouble(3);
-        return 0;
-    }
-    */
-
-    return 0;
-}
-
-template <typename T>
-static int GarbageCollect(lua_State* L) {
-    // LuaState& lua = LuaState::get(L);
-    
-    auto v = (T*)lua_touserdata(L, 1);
-    v->~T();
-
-    return 0;
-}
-
-void Room::initializeLua(LuaState& L, const std::filesystem::path &assets) {
-    // Room create function
-    L.pushGlobal("TE"); // stack size 1
-        L.setFunction("room_create", L_ROOM_CREATE); // =
-    L.pop(1);
-
-    L.newMetatable("__mt_Room");
-        L.setFunction("__index", IndexMeta<Room>);
-        L.setFunction("__newindex", NewIndexMeta<Room>);
-        L.setFunction("__gc", GarbageCollect<Room>);
-    L.pop(1);
-
-    L.newMetatable("__mt_Background");
-        L.setFunction("__index", IndexMeta<Background>);
-        L.setFunction("__newindex", NewIndexMeta<Background>);
-        L.setFunction("__gc", GarbageCollect<Background>);
-    L.pop(1);
-
-    L.newMetatable("__mt_Camera");
-        L.setFunction("__index", IndexMeta<Camera>);
-        L.setFunction("__newindex", NewIndexMeta<Camera>);
-        L.setFunction("__gc", GarbageCollect<Camera>);
-    L.pop(1);
-
-    /*for (int i = 0; i < 100; ++i) {
-        luaL_loadstring(L, "local v = ...; print(v)");
-        L.pushDouble(i);
-        lua_pcall(L, 1, LUA_MULTRET, 0);
-        
-        L.doString("print(\"Room create res: \")");
-        L.doString("print(TE.room_create())");
-    }*/
-
-    // L.doString("print(room.width)");
-
-    /*
-    sol::table engineEnv = lua["TE"];
-
-    Tilemap::initializeLua(lua);
-    lua.new_usertype<Background>(
-        "Background", sol::no_constructor,
-        "visible", &Background::visible,
-        "depth", &Background::depth,
-        "sprite_index", &Background::spriteIndex,
-        "set_color", [&](Background* bg, sol::table color) {
-            bg->color = MakeColor(color);
-        },
-        "get_name", [&](Background* bg) {
-            return bg->name;
-        },
-        "get_color", [&](Background* bg) {
-            return lua.create_table_with((float)bg->color.r, (float)bg->color.g, (float)bg->color.b, (float)bg->color.a);
-        }
-    );
-
-    engineEnv["room_create"] = [&](RoomReference* room) {
-        std::unique_ptr<Room> r;
-        if (room == nullptr) {
-            r = std::make_unique<Room>(lua);
+    lua_newtable(L); // -1: table
+        // Create and call constructor for room
+        Room* room = nullptr;
+        // No room reference
+        if (lua_gettop(lua) == 1 || lua_isnil(L, 1)) {
+            room = new(lua_newuserdata(lua, sizeof(Room))) Room(lua); // -1: room, -2: table
         }
         else {
-            r = std::make_unique<Room>(lua, room);
+            // Initiate with room reference
+            RoomReference* ref = (RoomReference*)lua_touserdata(L, 1);
+            room = new(lua_newuserdata(lua, sizeof(Room))) Room(lua, ref); // -1: room, -2: table
         }
-        r->load();
-        return std::move(r);
-    };
 
-    lua.new_usertype<Camera>(
-        "Camera", sol::no_constructor,
+        lua_newtable(L);
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                static_cast<Room*>(lua_touserdata(L, 1))->~Room();
+                return 0;
+            });
+            lua_setfield(L, -2, "__gc");
+        lua_setmetatable(L, -2); // meta
 
-        "get_x", &Camera::getX,                 "get_y", &Camera::getY,
-        "get_x_previous", &Camera::getXPrev,    "get_y_previous", &Camera::getYPrev,
-        "get_width", &Camera::getWidth,         "get_height", &Camera::getHeight,
+        lua_setfield(L, -2, "__cpp_ptr"); // -1: table
 
-        "set_x", &Camera::setX,                 "set_y", &Camera::setY,
-        "stay_in_bounds", &Camera::stayInBounds,
+        // Create view
+        lua_newtable(L); // -1: this, -2: main table
+            Room::Camera* camera = &room->camera;
+            lua_pushlightuserdata(L, camera);       // Light userdata, the camera is technically already being GC'd by Lua since the Room is Lua-owned
+            lua_setfield(L, -2, "__cpp_ptr");   // This works fine since I do tables really weird and don't let Lua and C++ know everything about each others contexts..
+            
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Room::Camera* camera = lua_toclass<Room::Camera>(L, 1);
+                lua_pushnumber(L, camera->width);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_width");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Room::Camera* camera = lua_toclass<Room::Camera>(L, 1);
+                lua_pushnumber(L, camera->height);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_height");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Room::Camera* camera = lua_toclass<Room::Camera>(L, 1);
+                lua_pushnumber(L, camera->x);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_x");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Room::Camera* camera = lua_toclass<Room::Camera>(L, 1);
+                lua_pushnumber(L, camera->xPrev);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_x_previous");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Room::Camera* camera = lua_toclass<Room::Camera>(L, 1);
+                lua_pushnumber(L, camera->y);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_y");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Room::Camera* camera = lua_toclass<Room::Camera>(L, 1);
+                lua_pushnumber(L, camera->yPrev);
+                return 1;
+            });
+            lua_setfield(L, -2, "get_y_previous");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_toclass<Room::Camera>(L, 1)->setX(luaL_checknumber(L, 2));
+                return 0;
+            });
+            lua_setfield(L, -2, "set_x");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_toclass<Room::Camera>(L, 1)->setY(luaL_checknumber(L, 2));
+                return 0;
+            });
+            lua_setfield(L, -2, "set_y");
+            
+            luaL_setmetatable(L, "__te_view");
+        lua_setfield(L, -2, "view"); // Set table as "view" field
+
+        luaL_setmetatable(lua, "__te_room"); // -1: room table
+
+    lua_pushvalue(L, -1); // room, room
+    int roomIdx = lua_gettop(L);
+
+    room->load(roomIdx);
+
+    lua_pop(L, 1);
+
+    return 1; // return room
+}
+
+static int RoomInstancesRect(lua_State* L) {
+    int argcount = lua_gettop(L);
+
+    Room* room = lua_toclass<Room>(L, 1);
+    float left = lua_tonumber(L, 3);
+    float top = lua_tonumber(L, 4);
+    float right = lua_tonumber(L, 5);
+    float bottom = lua_tonumber(L, 6);
+
+    float width = right - left;
+    float height = bottom - top;
+
+    sf::FloatRect rect = { { left, top }, { width, height } };
+
+    lua_getfield(L, 2, "__id");
+    bool inst = lua_isnil(L, -1);
+    lua_pop(L, 1); // pop nil instance
+
+    const Object* ignore = (argcount < 8) ? nullptr : lua_toclass<Object>(L, 8);
+    Object* base = (inst) ? lua_toclass<Object>(L, 7)->self : lua_toclass<Object>(L, 7);
+    lua_newtable(L);
+    int count = 0;
+    for (auto& i : room->ids) {
+        auto& instance = i.second;
+        if (i.second->hasTable && i.second->active && i.second->extends(base)) {
+            if (ignore == nullptr || i.second != ignore) {
+                sf::FloatRect otherRect = { { instance->getBboxLeft(), instance->bboxTop() }, { 0, 0 } };
+                otherRect.size.x = instance->bboxRight() - otherRect.position.x;
+                otherRect.size.y = instance->bboxBottom() - otherRect.position.y;
+                auto intersection = rect.findIntersection(otherRect);
+                if (intersection.has_value()) {
+                    count++;
+                    lua_rawgeti(L, LUA_REGISTRYINDEX, instance->tableReference);
+                    lua_rawseti(L, -2, count);
+                }
+            }
+        }
+    }
+    return 1;
+}
+
+// 1:room, 2:instance, 3:left, 4:top, 5:right, 6:bottom, 7:object
+static int RoomInstanceRect(lua_State* L) {
+    int argcount = lua_gettop(L);
+
+    Room* room = lua_toclass<Room>(L, 1);
+    float left = lua_tonumber(L, 3);
+    float top = lua_tonumber(L, 4);
+    float right = lua_tonumber(L, 5);
+    float bottom = lua_tonumber(L, 6);
+
+    float width = right - left;
+    float height = bottom - top;
+
+    sf::FloatRect rect = { { left, top }, { width, height } };
+
+    lua_getfield(L, 7, "__id");
+    bool isInstance = !lua_isnil(L, -1);
+    if (isInstance) {
+        int instanceId = lua_tointeger(L, -1);
+        lua_pop(L, 1);
+
+        auto it = room->ids.find(instanceId);
+        if (it == room->ids.end()) {
+            lua_pushnil(L); // nil
+            return 1;
+        }
         
-        "teleport", &Camera::teleport
-    );
+        Object* foundInstance = it->second;
+        if (!foundInstance->active || !foundInstance->hasTable) {
+            lua_pushnil(L); // nil
+            return 1;
+        }
 
-    lua.new_usertype<Room>(
-        "Room", sol::no_constructor,
+        sf::FloatRect otherRect = { { foundInstance->getBboxLeft(), foundInstance->bboxTop() }, { 0, 0 } };
+        otherRect.size.x = foundInstance->bboxRight() - otherRect.position.x;
+        otherRect.size.y = foundInstance->bboxBottom() - otherRect.position.y;
+        auto intersection = rect.findIntersection(otherRect);
+        
+        // Intersection vs none
+        if (intersection.has_value()) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, foundInstance->tableReference);
+            return 1;
+        }
+        else {
+            lua_pushnil(L);
+            return 1;
+        }
+    }
+    else {
+        lua_pop(L, 1); // pop nil instance
 
-        // Room info
-        "view",   &Room::camera,
-        "width",    sol::readonly(&Room::width),
-        "height",   sol::readonly(&Room::height),
+        Object* base = lua_toclass<Object>(L, 7);
+        const Object* ignore = (argcount >= 8) ? lua_toclass<Object>(L, 8) : nullptr;
 
-        "background_get",           RoomGetBG,
-        "background_list_create",   RoomGetBGList,
-        "tilemap_get",              RoomGetTilemap,
-        "tilemap_list_create",      RoomGetTilemapList,
+        for (auto& i : room->ids) {
+            auto& instance = i.second;
+            if (i.second->hasTable &&
+                i.second->active &&
+                i.second->extends(base)) {
+                if (ignore == nullptr || i.second != ignore) {
+                    sf::FloatRect otherRect = { { instance->getBboxLeft(), instance->bboxTop() }, { 0, 0 } };
+                    otherRect.size.x = instance->bboxRight() - otherRect.position.x;
+                    otherRect.size.y = instance->bboxBottom() - otherRect.position.y;
+                    auto intersection = rect.findIntersection(otherRect);
+                    if (intersection.has_value()) {
+                        lua_rawgeti(L, LUA_REGISTRYINDEX, instance->tableReference);
+                        return 1;
+                    }
+                }
+            }
+        }
+        lua_pushnil(L);
+        return 1;
+    }
+}
 
-        "instance_create",          &Room::instanceCreateScript,
-        "instance_exists",          &Room::instanceExistsScript,    // Supports instances & objects as params
-        "instance_destroy",         &Room::instanceDestroyScript,   // Supports instances & objects as params
-        "instance_get_first",       &Room::getObject,               // Object param only
-        "instance_list_create",     &Room::objectGetList,           // Object param only
-        "instance_count",           &Room::objectCount,             // Object param only
-        "instance_rect",            &Room::collisionRectangleScript,    // Self first argument
-        "instances_rect",           &Room::collisionRectangleList,      // Self first argument
+static int RoomInstanceExists(lua_State* L) {
+    if (lua_gettop(L) < 2 || lua_isnil(L, 2)) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
 
-        "object_deactivate", &Room::deactivateObject,
-        "object_activate", &Room::activateObject,
-        "object_activate_region", &Room::activateObjectRegion,
+    Room* room = lua_toclass<Room>(L, 1);
+    Object* object = lua_toclass<Object>(L, 2);
 
-        "step", &Room::timestep,
-        "draw", &Room::draw,
+    if (object == nullptr) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
 
-        "render_x", &Room::renderCameraX,
-        "render_y", &Room::renderCameraY,
-        "set_render_position", &Room::setView,
+    // Instance
+    if (lua_getfieldexists(L, 2, "__id")) {
+        lua_getfield(L, 2, "__id");
+            int id = lua_tointeger(L, -1);
+        lua_pop(L, 1);
+        bool exists = room->ids.find(id) != room->ids.end() && object->MyReference.roomId == room->myId;
+        lua_pushboolean(L, exists);
+        return 1;
+    }
+    // Class
+    else for (auto& [k, other] : room->ids) {
+        if (other->extends(object)) {
+            lua_pushboolean(L, true);
+            return 1;
+        }
+    }
 
-        sol::meta_function::index,      &Room::getKVP,
-        sol::meta_function::new_index,  &Room::setKVP
-    );
+    lua_pushboolean(L, false);
+    return 1;
+}
 
+static int RoomInstanceDestroy(lua_State* L) {
+    Room* room = lua_toclass<Room>(L, 1);
+
+    bool inst = false;
+    lua_getfield(L, 2, "__id");
+    inst = !lua_isnil(L, -1);
+
+    // Unique instance
+    if (inst) {
+        int id = lua_tonumber(L, -1);
+        lua_pop(L, 1);
+
+        auto idPos = room->ids.find(id);
+        if (idPos != room->ids.end()) {
+            auto object = idPos->second;
+            object->runScriptTimestep("destroy", 1);
+            room->deleteQueue.push_back(object->vectorPos);
+            room->ids.erase(object->MyReference.id);
+        }
+    }
+
+    // Whole object
+    else {
+        lua_pop(L, 1);
+
+        Object* original = lua_toclass<Object>(L, 1);
+        for (auto& [k, i] : room->ids) {
+            if (i->extends(original)) {
+                ObjectId id = i->MyReference.id;
+                auto idPos = room->ids.find(id);
+                if (idPos != room->ids.end()) {
+                    room->deleteQueue.push_back(i->vectorPos);
+                    room->ids.erase(id);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int lua_pushnewinstance(lua_State* L, int originalTableIndex, ObjectId objectId, Object* instance, Object* pseudoclass) {
+    lua_newtable(L); // table
+
+        lua_pushnumber(L, objectId);    // id, table
+        lua_setfield(L, -2, "__id");    // table
+
+        if (pseudoclass->parent != nullptr)
+            lua_rawgeti(L, LUA_REGISTRYINDEX, pseudoclass->parent->tableReference); // super, table
+        else
+            lua_pushnil(L); // nil, table
+        lua_setfield(L, -2, "super");           // table
+
+        if (pseudoclass->spriteIndex != nullptr) {
+            lua_pushstring(L, "sprite_index");
+            lua_rawgeti(L, LUA_REGISTRYINDEX, instance->spriteIndex->ref);
+            lua_rawset(L, -3);
+
+            instance->spriteIndex = pseudoclass->spriteIndex;
+        }
+
+        lua_pushstring(L, "properties");
+        lua_newtable(L);
+            for (auto& property : pseudoclass->baseProperties) {
+                const std::string& name = property.first;
+                PropertyType type = property.second.first;
+                nlohmann::json& data = property.second.second;
+
+                switch (type) {
+                    case (PropertyType::BOOLEAN): {
+                        lua_pushboolean(L, data.get<bool>());
+                        break;
+                    }
+                    case (PropertyType::INTEGER): {
+                        lua_pushinteger(L, data.get<int>());
+                        break;
+                    }
+                    case (PropertyType::REAL): {
+                        lua_pushnumber(L, data.get<double>());
+                        break;
+                    }
+                    case (PropertyType::STRING): {
+                        lua_pushstring(L,data.get<std::string>().c_str());
+                        break;
+                    }
+                    default: {
+                        std::string value = data.get<std::string>();
+                        if (value.empty()) {
+                            lua_pushnil(L);
+                        }
+                        else {
+                            lua_getglobal(L, ENGINE_ENV);
+                            lua_getfield(L, -1, value.c_str());
+
+                            // Assigns value from TE namespace if match is found
+                            if (!lua_isnil(L, -1)) {
+                                lua_remove(L, -2);
+                            }
+                            // Assigns string
+                            else {
+                                lua_pop(L, 2);
+                                lua_pushstring(L, value.c_str());
+                            }
+                        }
+
+                        break;
+                    }
+                }
+
+                lua_setfield(L, -2, name.c_str());
+            }
+        lua_rawset(L, -3);
+
+        lua_pushvalue(L, originalTableIndex);   // idx, table, idx
+        lua_setfield(L, -2, "object_index");    // table, idx
+
+        lua_pushstring(L, "__cpp_ptr");         // ptr, table, idx
+        lua_pushlightuserdata(L, instance);     // ud, ptr, table, idx
+        lua_rawset(L, -3);                      // table, idx
+
+        luaL_setmetatable(L, "__te_object");
+
+    return 1;
+}
+
+static int RoomInstanceCreate(lua_State* L) {
+    Room* room = lua_toclass<Room>(L, 1);
+    float x = luaL_checknumber(L, 2);
+    float y = luaL_checknumber(L, 3);
+    float depth = luaL_checknumber(L, 4);
+    Object* original = lua_toclass<Object>(L, 5);
+
+    ObjectId objectId = room->currentId++;
+    std::unique_ptr<Object> o = std::make_unique<Object>(*original);
+        lua_pushnewinstance(L, 5, objectId, o.get(), original);
+    int tableIdx = luaL_ref(L, LUA_REGISTRYINDEX);
+    
+    o->hasTable = true;
+    o->tableReference = tableIdx;
+
+    Object* ptr = o.get();
+    ptr->MyReference = { objectId, room->myId, ptr };
+    room->addQueue.push_back(std::move(o));
+    room->ids[objectId] = ptr;
+
+    ptr->x = x;
+    ptr->y = y;
+    ptr->depth = depth;
+    ptr->runScriptTimestep("create", 1);
+    ptr->xPrevRender = ptr->xPrev = ptr->x;
+    ptr->yPrevRender = ptr->yPrev = ptr->y;
+
+        // Push the table index back
+        lua_rawgeti(L, LUA_REGISTRYINDEX, tableIdx);
+    return 1;
+}
+
+static int RoomSetRenderPosition(lua_State* L) {
+    Room* room = lua_toclass<Room>(L, 1);
+    float x = lua_tonumber(L, 2);
+    float y = lua_tonumber(L, 3);
+    room->setView(x, y);
+
+    return 0;
+}
+
+static int RoomInstanceListCreate(lua_State* L) {
+    Room* room = lua_toclass<Room>(L, 1);
+    Object* BASEOBJECT = lua_toclass<Object>(L, 2);
+    int count = 0;
+    lua_newtable(L);
+    for (auto& [k, i] : room->ids) {
+        if (i->extends(BASEOBJECT)) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, i->tableReference);
+            count++;
+            lua_rawseti(L, -2, count);
+        }
+    }
+    return 1;
+}
+
+static int RoomInstanceCount(lua_State* L) {
+    int c = 0;
+    Room* room = lua_toclass<Room>(L, 1);
+    Object* baseClass = lua_toclass<Object>(L, 2);
+    Object* check = (lua_getfieldexists(L, 2, "__id")) ? baseClass->self : baseClass;
+    for (auto& [k, i] : room->ids) {
+        if (i->extends(check)) {
+            ++c;
+        }
+    }
+    lua_pushinteger(L, c);
+    return 1;
+}
+
+static int RoomInstanceGet(lua_State* L) {
+    Room* room = lua_toclass<Room>(L, 1);
+    Object* baseClass = lua_toclass<Object>(L, 2);
+    Object* check = (lua_getfieldexists(L, 2, "__id")) ? baseClass->self : baseClass;
+    for (auto& [k, i] : room->ids) {
+        if (i->extends(check)) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, i->tableReference);
+            return 1;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+void Room::initializeLua(LuaState& lua, const std::filesystem::path &assets) {
+    // Room create function
+    lua_getglobal(lua, ENGINE_ENV);
+        lua_pushcfunction(lua, L_ROOM_CREATE);
+        lua_setfield(lua, -2, "room_create");
+    lua_pop(lua, 1);
+
+    // Create Room class type info
+    luaL_newmetatable(lua, "__te_room");
+        lua_pushcfunction(lua, RoomGet);                    lua_setfield(lua, -2, "__index");
+        lua_pushcfunction(lua, RoomSet);                    lua_setfield(lua, -2, "__newindex");
+        lua_pushcfunction(lua, RoomGarbageCollect);         lua_setfield(lua, -2, "__gc");
+        lua_pushcfunction(lua, RoomStep);                   lua_setfield(lua, -2, "step");
+        lua_pushcfunction(lua, RoomDraw);                   lua_setfield(lua, -2, "draw");
+        lua_pushcfunction(lua, RoomInstanceCreate);         lua_setfield(lua, -2, "instance_create");
+        lua_pushcfunction(lua, RoomInstanceGet);            lua_setfield(lua, -2, "instance_get");
+        lua_pushcfunction(lua, RoomInstanceRect);           lua_setfield(lua, -2, "instance_rect");
+        lua_pushcfunction(lua, RoomInstancesRect);          lua_setfield(lua, -2, "instances_rect");
+        lua_pushcfunction(lua, RoomInstanceExists);         lua_setfield(lua, -2, "instance_exists");
+        lua_pushcfunction(lua, RoomInstanceDestroy);        lua_setfield(lua, -2, "instance_destroy");
+        lua_pushcfunction(lua, RoomInstanceListCreate);     lua_setfield(lua, -2, "instance_list_create");
+        lua_pushcfunction(lua, RoomSetRenderPosition);      lua_setfield(lua, -2, "set_render_position");
+        lua_pushcfunction(lua, RoomInstanceCount);          lua_setfield(lua, -2, "instance_count");
+    lua_pop(lua, 1);
+
+    // Create view class type info
+    luaL_newmetatable(lua, "__te_view");
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+
+            lua_pushnumber(lua, c->x);
+            return 1;
+        }); lua_setfield(lua, -2, "get_x");
+
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+
+            double newNum = luaL_checknumber(lua, 2);
+            c->x = newNum;
+            
+            return 0;
+        }); lua_setfield(lua, -2, "set_x");
+
+        // Get Y
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+            lua_pushnumber(lua, c->y);
+            return 1;
+        }); lua_setfield(lua, -2, "get_y");
+
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+
+            double newNum = luaL_checknumber(lua, 2);
+            c->y = newNum;
+            
+            return 0;
+        }); lua_setfield(lua, -2, "set_y");
+
+        // Get X Previous
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+            lua_pushnumber(lua, c->xPrev);
+            return 1;
+        }); lua_setfield(lua, -2, "get_x_previous");
+
+        // Get Y Previous
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+            lua_pushnumber(lua, c->yPrev);
+            return 1;
+        }); lua_setfield(lua, -2, "get_y_previous");
+
+        // Teleport
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+            float x = lua_tonumber(lua, 2);
+            float y = lua_tonumber(lua, 3);
+            c->teleport(x, y);
+            return 0;
+        }); lua_setfield(lua, -2, "teleport");
+
+        // Get Width
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+
+            lua_pushnumber(lua, c->width);
+            return 1;
+        }); lua_setfield(lua, -2, "get_width");
+
+        // Get Height
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+
+            lua_pushnumber(lua, c->height);
+            return 1;
+        }); lua_setfield(lua, -2, "get_height");
+
+        // Get
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            const char* key = lua_tostring(lua, 2);
+            if (strcmp(key, "stay_in_bounds") == 0) {
+                lua_getfield(lua, 1, "__cpp_ptr");
+                auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+                lua_pop(lua, 1);
+
+                lua_pushboolean(lua, c->stayInBounds);
+                return 1;
+            }
+
+            lua_getmetatable(lua, 1);   // -1: meta
+            lua_pushvalue(lua, 2);      // -1: key, -2: meta
+            lua_gettable(lua, -2);      // -1: value, -2: meta (key was popped)
+            lua_remove(lua, -2);        // bye table
+
+            return 1;
+
+        }); lua_setfield(lua, -2, "__index");
+
+        // Set
+        lua_pushcfunction(lua, [](lua_State* lua) -> int {
+            const char* key = lua_tostring(lua, 2);
+            lua_getfield(lua, 1, "__cpp_ptr");
+            auto c = static_cast<Room::Camera*>(lua_touserdata(lua, -1));
+            lua_pop(lua, 1);
+
+            if (strcmp(key, "stay_in_bounds") == 0) {
+                c->stayInBounds = lua_toboolean(lua, 3);
+                return 0;
+            }
+            return 0;
+        }); lua_setfield(lua, -2, "__newindex");
+
+    lua_pop(lua, 1);
+
+    lua_getglobal(lua, ENGINE_ENV);
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "rooms")) {
         if (!it.is_regular_file() || it.path().extension() != ".bin") {
             continue;
@@ -221,19 +859,19 @@ void Room::initializeLua(LuaState& L, const std::filesystem::path &assets) {
         ref.name = identifier;
         ref.p = p;
 
-        engineEnv[identifier] = ref;
+        lua_pushlightuserdata(lua, &ref);
+        lua_setfield(lua, -2, identifier.c_str());
     }
-    */
+    lua_pop(lua, 1);
 }
 
-void Room::load() {
+void Room::load(int roomIdx) {
     // TODO
-    /*
     using namespace nlohmann;
 
     auto& game = Game::get();
     auto& objMgr = ObjectManager::get();
-    auto engineEnv = lua["TE"];
+    auto& lua = game.L;
 
     camera.width = game.canvasWidth;
     camera.height = game.canvasHeight;
@@ -267,10 +905,8 @@ void Room::load() {
     };
 
     std::string namestr = readstr();
-
     for (int i = 0; i < layerCount; ++i) {
         std::string type = readstr();
-
         std::string name = readstr();
 
         int depth;
@@ -298,7 +934,7 @@ void Room::load() {
             bool hasSprite;
             in.read(reinterpret_cast<char*>(&hasSprite), sizeof(hasSprite));
             if (hasSprite) {
-                bg->spriteIndex = &SpriteManager::get().sprites[readstr()];
+                bg->spriteIndex = GFX::sprites[readstr()].get();
             }
 
             bg->MyReference.id = currentId++;
@@ -416,41 +1052,73 @@ void Room::load() {
                 float y;
                 in.read(reinterpret_cast<char*>(&y), sizeof(y));
 
-                BaseObject* base = objMgr.gmlObjects[name];
-                
-                auto obj = instanceCreate(x, y, depth, base);
+                Object* ptr = nullptr;
+                std::unique_ptr<Object> scrappedPtr = nullptr;
+
+                auto it = objMgr.tilemapObjects.find(name);
+                if (it != objMgr.tilemapObjects.end()) {
+                    lua_rawgeti(L, LUA_REGISTRYINDEX, it->second.second); // idx
+                    int objIdx = lua_gettop(L);
+                    int objectId = currentId++;
+
+                        // Fetch original object
+                        Object* original = lua_toclass<Object>(L, objIdx);
+
+                        std::unique_ptr<Object> o = std::make_unique<Object>(*original);
+                        ptr = o.get();
+                            lua_pushnewinstance(L, objIdx, objectId, ptr, original);
+                        int tableIdx = luaL_ref(L, LUA_REGISTRYINDEX); // idx
+                        o->hasTable = true;
+                        o->tableReference = tableIdx;
+                    lua_pop(L, 1); // =
+
+                    ptr->x = x;
+                    ptr->y = y;
+                    ptr->depth = depth;
+
+                    ptr->MyReference.id = objectId;
+                    ptr->MyReference.roomId = myId;
+                    ptr->MyReference.object = ptr;
+                    
+                    addQueue.push_back(std::move(o));
+                    ids[objectId] = ptr;
+                }
+                else {
+                    scrappedPtr = std::make_unique<Object>(L);
+                    ptr = scrappedPtr.get();
+                }
 
                 bool readAdvanced = false;
                 in.read(reinterpret_cast<char*>(&readAdvanced), sizeof(readAdvanced));
+
                 if (readAdvanced) {
-                    float& rotation = obj->imageAngle;
+                    float& rotation = ptr->imageAngle;
                     in.read(reinterpret_cast<char*>(&rotation), sizeof(rotation));
 
-                    float& imageIndex = obj->imageIndex;
+                    float& imageIndex = ptr->imageIndex;
                     in.read(reinterpret_cast<char*>(&imageIndex), sizeof(imageIndex));
 
-                    float& imageSpeed = obj->imageSpeedMod;
+                    float& imageSpeed = ptr->imageSpeedMod;
                     in.read(reinterpret_cast<char*>(&imageSpeed), sizeof(imageSpeed));
 
-                    float& scaleX = obj->xScale;
+                    float& scaleX = ptr->xScale;
                     in.read(reinterpret_cast<char*>(&scaleX), sizeof(scaleX));
 
-                    float& scaleY = obj->yScale;
+                    float& scaleY = ptr->yScale;
                     in.read(reinterpret_cast<char*>(&scaleY), sizeof(scaleY));
 
-                    uint8_t col[4];
-                    in.read((char*)col, sizeof(uint8_t) * 4);
+                    uint8_t c;
+                    for (int i = 0; i < 4; ++i)
+                    in.read(reinterpret_cast<char*>(&c), sizeof(uint8_t));
                 }
-
                 int propertyCount;
                 in.read(reinterpret_cast<char*>(&propertyCount), sizeof(propertyCount));
 
                 if (propertyCount > 0) {
-                    if (obj->kvp.find("properties") == obj->kvp.end()) {
-                        obj->setDyn("properties", sol::table(lua, sol::create));
-                    }
-
-                    sol::table props = obj->getDyn("properties");
+                    lua_rawgeti(L, LUA_REGISTRYINDEX, ptr->tableReference); // reg index
+                    lua_pushstring(L, "properties"); // prop str, reg index
+                    lua_rawget(L, -2); // properties table, reg index
+                    lua_remove(L, -2); // properties
                     for (int j = 0; j < propertyCount; ++j) {
                         std::string key = readstr();
 
@@ -460,35 +1128,44 @@ void Room::load() {
                         if (type == 0) { // float
                             float val;
                             in.read(reinterpret_cast<char*>(&val), sizeof(val));
-                            props[key] = sol::make_object(lua, val);
+                            lua_pushnumber(L, val);
                         }
                         else if (type == 1) { // int
                             int val;
                             in.read(reinterpret_cast<char*>(&val), sizeof(val));
-                            props[key] = sol::make_object(lua, val);
+                            lua_pushinteger(L, val);
                         }
                         else if (type == 2) { // bool
                             bool val;
                             in.read(reinterpret_cast<char*>(&val), sizeof(val));
-                            props[key] = sol::make_object(lua, val);
+                            lua_pushboolean(L, val);
                         }
                         else { // other
                             std::string val = readstr();
-                            if (engineEnv[val] != sol::lua_nil) {
-                                props[key] = engineEnv[val];
+                            if (val.empty()) {
+                                lua_pushnil(L);
                             }
                             else {
-                                props[key] = sol::make_object(lua, val);
+                                lua_getglobal(L, ENGINE_ENV);
+                                lua_getfield(L, -1, val.c_str());
+                                if (lua_isnil(L, -1)) {
+                                    lua_pop(L, 2);
+                                    lua_pushstring(L, val.c_str());
+                                }
+                                else {
+                                    int type = lua_type(L, -1);
+                                    lua_remove(L, -2);
+                                }
                             }
                         }
+                        lua_setfield(L, -2, key.c_str());
                     }
+                    lua_pop(L, 1);
                 }
             }
         }
     }
-
-    createAndRoomStartEvents();
-    */
+    createAndRoomStartEvents(roomIdx);
 }
 
 // Room ->      "Create"
@@ -497,200 +1174,43 @@ void Room::load() {
 // Room ->      "Room Start"
 // Instances -> "Room Start"
 // TODO
-void Room::createAndRoomStartEvents() {
+void Room::createAndRoomStartEvents(int roomIdx) {
     auto& game = Game::get();
 
-    /*
-    auto create = kvp.find("create");
-    if (create != kvp.end()) {
-        create->second.as<sol::safe_function>()(this);
-    }
-        */
     updateQueue();
 
     for (auto& objUnique : instances) {
-        objUnique->runScript("create", this);
+        objUnique->runScriptTimestep("create", roomIdx);
     }
     updateQueue();
 
-    /*
-    auto start = kvp.find("room_start");
-    if (start != kvp.end()) {
-        start->second.as<sol::safe_function>()(this);
-        updateQueue();
-    }
-        */
-
     for (auto& objUnique : instances) {
-        objUnique->runScript("room_start", this);
+        objUnique->runScriptTimestep("room_start", roomIdx);
     }
     updateQueue();
 
     camera.xPrev = camera.x;
     camera.yPrev = camera.y;
-}
 
-void Room::timestep() {
-    camera.xPrev = camera.x;
-    camera.yPrev = camera.y;
-
-    for (auto& i : instances) {
-        if (i->active) {
-            i->xPrev = i->x;
-            i->yPrev = i->y;
-            i->xPrevRender = i->x;
-            i->yPrevRender = i->y;
-            if (i->incrementImageSpeed) {
-                i->imageIndex += (i->imageSpeed * i->imageSpeedMod);
-            }
-        }
+    for (auto& ptr : instances) {
+        ptr->xPrevRender = ptr->xPrev = ptr->x;
+        ptr->yPrevRender = ptr->yPrev = ptr->y;
     }
-
-    // Begin Step
-    for (auto& instance : instances) {
-        if (instance->active) {
-            instance->runScript("begin_step", this);
-        }
-    }
-    updateQueue();
-
-    // Step
-    for (auto& instance : instances) {
-        if (instance->active) {
-            instance->runScript("step", this);
-        }
-        /*
-        if (instance->active && instance->stepFunc.has_value()) {
-            instance->stepFunc.value()(instance->MyReference, this);
-        }
-        */
-    }
-    updateQueue();
-
-    // End Step
-    for (auto& instance : instances) {
-        if (instance->active) {
-            instance->runScript("end_step", this);
-        }
-    }
-    updateQueue();
 }
 
 void Room::setView(float cx, float cy) {
     auto target = Game::get().getRenderTarget();
+    auto targetSize = target->getSize();
+    float targetWidth = targetSize.x;
+    float targetHeight = targetSize.y;
 
-    sf::View view(sf::FloatRect { { 0.0f, 0.0f }, { camera.width, camera.height } });
+    sf::View view(sf::FloatRect { { 0.0f, 0.0f }, { targetWidth, targetHeight } });
 
-    view.setCenter({ cx + camera.width / 2.0f, cy + camera.height / 2.0f });
+    view.setCenter({ cx + targetWidth / 2.0f, cy + targetHeight / 2.0f });
     target->setView(view);
 
     renderCameraX = cx;
     renderCameraY = cy;
-}
-
-void Room::draw(float alpha) {
-    drawables.clear();
-
-    int count = 0;
-    for (auto& i : instances) {
-        if (i->visible && i->active && dynamic_cast<Tilemap*>(i.get())) {
-            count++;
-        }
-    }
-    for (auto& i : instances) {
-        if (i->visible && i->active) {
-            drawables.push_back(i.get());
-        }
-    }
-
-    std::sort(drawables.begin(), drawables.end(), [](const Drawable* a, const Drawable* b) {
-        return a->depth > b->depth;
-    });
-
-    for (auto& d : drawables) {
-        d->beginDraw(this, alpha);
-    }
-
-    for (auto& d : drawables) {
-        /*if (d->drawFunc.has_value()) {
-            d->drawFunc.value()(d->MyReference, this, alpha);
-        }
-        else*/ {
-            d->draw(this, alpha);
-        }
-    }
-    
-    for (auto& d : drawables) {
-        d->endDraw(this, alpha);
-    }
-
-    auto target = Game::get().getRenderTarget();
-    target->setView(target->getDefaultView());
-
-    for (auto& d : drawables) {
-        if (!d->drawsGui) continue;
-        d->drawGui(this, alpha);
-    }
-}
-
-/*
-void Room::deactivateObject(sol::object object) {
-    if (object.is<BaseObject*>()) {
-        BaseObject* o = object.as<BaseObject*>();
-        for (auto& i : ids) {
-            if (i.second->extends(o)) {
-                i.second->active = false;
-            }
-        }
-    }
-    else {
-        auto& ref = object.as<Object::Reference>();
-        auto it = ids.find(ref.id);
-        if (it != ids.end()) {
-            it->second->active = false;
-        }
-    }
-}
-
-void Room::activateObject(sol::object object) {
-    if (object.is<BaseObject*>()) {
-        BaseObject* o = object.as<BaseObject*>();
-        for (auto& i : ids) {
-            if (i.second->extends(o))
-                i.second->active = true;
-        }
-    }
-    else {
-        auto& ref = object.as<Object::Reference>();
-        auto it = ids.find(ref.id);
-        if (it != ids.end()) {
-            it->second->active = true;
-        }
-    }
-}
-
-void Room::activateObjectRegion(sol::object object, float x1, float y1, float x2, float y2) {
-    BaseObject* o = object.as<BaseObject*>();
-    sf::FloatRect regionRect = { { x1, y1 }, { x2 - x1, y2 - y1 } };
-    for (auto& i : ids) {
-        if (!i.second->active && i.second->extends(o)) {
-            auto objectRect = i.second->getRectangle();
-            if (regionRect.findIntersection(objectRect).has_value()) {
-                i.second->active = true;
-            }
-        }
-    }
-}
-*/
-
-std::vector<Object::Reference> Room::objectGetList(BaseObject* baseType) {
-    std::vector<Object::Reference> v;
-    for (auto& i : instances) {
-        if (i->extends(baseType)) {
-            v.push_back(i->MyReference);
-        }
-    }
-    return v;
 }
 
 void Background::draw(Room* room, float alpha) {
@@ -701,7 +1221,7 @@ void Background::draw(Room* room, float alpha) {
     float y = cy - 1;
 
     sf::Shader* shader = Game::get().currentShader;
-    if (spriteIndex) {
+    if (spriteIndex && spriteIndex->sprite) {
         sf::Sprite* spr = spriteIndex->sprite.get();
         spr->setScale({ 1, 1 });
         spr->setOrigin({ 0, 0 });
@@ -728,7 +1248,7 @@ void Background::draw(Room* room, float alpha) {
     }
     else {
         sf::RectangleShape rs({ room->camera.width + 2, room->camera.height + 2 });
-        rs.setTexture(&SpriteManager::get().whiteTexture);
+        rs.setTexture(&GFX::whiteTexture);
         rs.setFillColor(color);
         rs.setPosition({ x, y });
         Game::get().getRenderTarget()->draw(rs, shader);

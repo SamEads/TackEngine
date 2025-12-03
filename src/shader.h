@@ -16,5 +16,4 @@ public:
         return sm;
     }
 	void initializeLua(LuaState Lua);
-    // void setUniform(Shader* shader, const std::string& uniform, sol::object data);
 };

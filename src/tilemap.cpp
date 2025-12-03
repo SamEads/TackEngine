@@ -5,32 +5,19 @@
 #include "game.h"
 
 void Tilemap::initializeLua(LuaState L) {
-    // TODO
-    /*
-    lua.new_usertype<Tilemap>(
-        "Tilemap", sol::no_constructor,
-        "visible", &Tilemap::visible,
-        "set", &Tilemap::set,
-        "set_tileset", [&](Tilemap* tilemap, Tileset* tileset) {
-            tilemap->tileset = tileset;
-        },
-        "get_name", [&](Tilemap* tilemap) {
-            return tilemap->name;
-        },
-        "set_ext", &Tilemap::setExt,
-        "get", &Tilemap::get,
-        "get_ext", &Tilemap::getExt,
-        "depth", &Tilemap::depth
-    );
-    */
 }
 
 void Tilemap::draw(Room* room, float alpha) {
+
     int tileWidth = tileset->tileWidth;
     int tileHeight = tileset->tileHeight;
 
     float cx = room->renderCameraX;
     float cy = room->renderCameraY;
+
+    if (tileWidth == 0 || tileHeight == 0) {
+        return;
+    }
 
     int thisCx = std::max(0, (static_cast<int>(cx) / tileWidth) - 1);
     int thisCx2 = thisCx + static_cast<int>(ceilf(room->camera.width / (float)tileWidth)) + 2;
@@ -105,6 +92,7 @@ void Tilemap::draw(Room* room, float alpha) {
             }
         }
     }
+
 }
 
 int Tilemap::get(int x, int y) {

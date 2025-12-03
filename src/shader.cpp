@@ -6,72 +6,106 @@
 // TODO
 
 void ShaderManager::initializeLua(LuaState L) {
-    /*
-    sol::table engineEnv = lua["TE"];
-    sol::table shaderModule = engineEnv.create_named("shader");
+    lua_getglobal(L, ENGINE_ENV);
+        lua_newtable(L);
 
-    shaderModule["add_fragment"] = [&](const std::string& fragment) {
-        Shader s = Shader ();
-        bool loaded = s.baseShader.loadFromMemory(fragment, sf::Shader::Type::Fragment);
-        if (loaded) { }
-        return s;
-    };
+#define CREATE_SHADER(arg1, arg2) \
+lua_newtable(L); \
+    Shader* lShader = new(lua_newuserdata(L, sizeof(Shader))) Shader(); \
+        bool loaded = lShader->baseShader.loadFromMemory(arg1, arg2); \
+        if (loaded) {} \
+    lua_setfield(L, -2, "__cpp_ptr");
 
-    shaderModule["add_vertex"] = [&](const std::string& fragment) {
-        Shader s = Shader ();
-        bool loaded = s.baseShader.loadFromMemory(fragment, sf::Shader::Type::Vertex);
-        if (loaded) { }
-        return s;
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                const char* frag = luaL_checkstring(L, 1);
+                CREATE_SHADER(frag, sf::Shader::Type::Fragment)
+                return 1;
+            });
+            lua_setfield(L, -2, "add_fragment");
 
-    shaderModule["add"] = [&](const std::string& vertex, const std::string& fragment) {
-        Shader s = Shader ();
-        bool loaded = s.baseShader.loadFromMemory(vertex, fragment);
-        if (loaded) { }
-        return s;
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                const char* vert = luaL_checkstring(L, 1);
+                CREATE_SHADER(vert, sf::Shader::Type::Vertex)
+                return 1;
+            });
+            lua_setfield(L, -2, "add_vertex");
 
-    shaderModule["set_uniform"] = [&](Shader* shader, const std::string& uniform, sol::object data) {
-        setUniform(shader, uniform, data);
-    };
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                CREATE_SHADER(luaL_checkstring(L, 1), luaL_checkstring(L, 2))
+                return 1;
+            });
+            lua_setfield(L, -2, "add");
 
-    shaderModule["bind"] = [&](sol::object shader) {
-        if (shader == sol::lua_nil) {
-            Game::get().currentShader = nullptr;
-            return;
-        }
-        
-        if (shader.is<Shader*>()) {
-            Shader* s = shader.as<Shader*>();
-            Game::get().currentShader = &s->baseShader;
-        }
-    };
-    */
+#undef CREATE_SHADER
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                int baseArgs = lua_gettop(L);
+
+                Shader* ptr = lua_toclass<Shader>(L, 1);
+                sf::Shader& baseShader = ptr->baseShader;
+                const char* uniform = luaL_checkstring(L, 2);
+
+                if (lua_istable(L, 3)) {
+                    lua_pushstring(L, "__cpp_ptr");
+                    lua_rawget(L, 3);
+                    if (!lua_isnil(L, -1)) {
+                        GFX::Sprite* ind = lua_toclassfromref<GFX::Sprite>(L, 3);
+                        baseShader.setUniform(uniform, ind->texture);
+                        return 0;
+                    }
+                    lua_pop(L, 1);
+
+                    int l = lua_rawlen(L, 3);
+
+                    if (l == 2) {
+                        float v1 = lua_tonumbertable(L, 3, 1);
+                        float v2 = lua_tonumbertable(L, 3, 2);
+                        baseShader.setUniform(uniform, sf::Glsl::Vec2 { v1, v2 });
+                        return 0;
+                    }
+                    // Vector 3
+                    if (l == 3) {
+                        float v1 = lua_tonumbertable(L, 3, 1);
+                        float v2 = lua_tonumbertable(L, 3, 2);
+                        float v3 = lua_tonumbertable(L, 3, 3);
+                        baseShader.setUniform(uniform, sf::Glsl::Vec3 { v1, v2, v3 });
+                        return 0;
+                    }
+                    // Vector 4
+                    if (l == 4) {
+                        float v1 = lua_tonumbertable(L, 3, 1);
+                        float v2 = lua_tonumbertable(L, 3, 2);
+                        float v3 = lua_tonumbertable(L, 3, 3);
+                        float v4 = lua_tonumbertable(L, 3, 4);
+                        baseShader.setUniform(uniform, sf::Glsl::Vec4 { v1, v2, v3, v4 });
+                        return 0;
+                    }
+                }
+                // Bool
+                if (lua_isboolean(L, 3)) {
+                    baseShader.setUniform(uniform, lua_toboolean(L, 3));
+                    return 0;
+                }
+                // Float
+                if (lua_isnumber(L, 3)) {
+                    baseShader.setUniform(uniform, static_cast<float>(lua_tonumber(L, 3)));
+                    return 0;
+                }
+
+                return 0;
+            });
+            lua_setfield(L, -2, "set_uniform");
+
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                if (lua_isnil(L, 1)) {
+                    Game::get().currentShader = nullptr;
+                    return 0;
+                }
+                Game::get().currentShader = &lua_toclass<Shader>(L, 1)->baseShader;
+                return 0;
+            });
+            lua_setfield(L, -2, "bind");
+
+        lua_setfield(L, -2, "shader");
+    lua_pop(L, 1);
 }
-
-/*
-void ShaderManager::setUniform(Shader *shader, const std::string &uniform, sol::object data) {
-    if (data.is<bool>()) {
-        shader->baseShader.setUniform(uniform, data.as<bool>());
-    }
-    else if (data.is<float>()) {
-        shader->baseShader.setUniform(uniform, data.as<float>());
-    }
-    else if (data.is<SpriteIndex*>()) {
-        SpriteIndex* spr = data.as<SpriteIndex*>();
-        shader->baseShader.setUniform(uniform, spr->texture);
-    }
-    else if (data.is<sol::table>()) {
-        auto tbl = data.as<sol::table>();
-        if (tbl.size() == 2) {
-            shader->baseShader.setUniform(uniform, sf::Glsl::Vec2 { tbl.get<float>(1), tbl.get<float>(2) });
-        }
-        else if (tbl.size() == 3) {
-            shader->baseShader.setUniform(uniform, sf::Glsl::Vec3 { tbl.get<float>(1), tbl.get<float>(2), tbl.get<float>(3) });
-        }
-        else if (tbl.size() == 4) {
-            shader->baseShader.setUniform(uniform, sf::Glsl::Vec4 { tbl.get<float>(1), tbl.get<float>(2), tbl.get<float>(3), tbl.get<float>(4) });
-        }
-    }
-}
-*/
