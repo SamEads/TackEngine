@@ -31,13 +31,16 @@ inline int lua_geti(lua_State* L, int idx, lua_Integer n) {
     return lua_type(L, -1);
 }
 
+#define lua_rawlen lua_objlen
+
+#endif
+
 extern int refcount;
 extern int refBaseline;
 extern std::unordered_map<std::string, int> n;
 #include <unordered_map>
 
 static void printanalytics() {
-    /*
     std::cout << "Refs: " << refcount;
     if (refcount == refBaseline) {
         std::cout << " (baseline)\n";
@@ -48,26 +51,19 @@ static void printanalytics() {
     for (auto& [k,v] : n) {
         std::cout << "\t" << k << ": " << v << "\n";
     }
-    */
 }
 
 inline int lua_reference(lua_State* L, const std::string& shorthand) {
     n[shorthand]++;
     refcount++;
-    printanalytics();
     return luaL_ref(L, LUA_REGISTRYINDEX);
 }
 
 inline void lua_unreference(lua_State* L, int ref, const std::string& shorthand) {
     n[shorthand]--;
     refcount--;
-    printanalytics();
     luaL_unref(L, LUA_REGISTRYINDEX, ref);
 }
-
-#define lua_rawlen lua_objlen
-
-#endif
 
 inline int lua_lazycall(lua_State* L, int argCount, int retCount) {
     int res = lua_pcall(L, argCount, retCount, 0); // -1 TE

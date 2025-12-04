@@ -1,11 +1,13 @@
 #include <iostream>
 #include "game.h"
 
+#ifdef _WIN32
 #include <ProcessInfo.h>
 #include <SystemInformation.h>
 
 ProcessInfo process;
 SystemInformation sys_info;
+#endif
 
 void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
     lua_getglobal(L, ENGINE_ENV);
@@ -63,7 +65,11 @@ void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
             lua_setfield(L, -2, "set_tick_rate");
 
             lua_pushcfunction(L, [](lua_State* L) -> int {
+#ifdef _WIN32
                 auto memory = process.GetMemoryUsage() / 1'000;
+#else
+                double memory = 0;
+#endif
                 lua_pushnumber(L, memory);
                 return 1;
             });
