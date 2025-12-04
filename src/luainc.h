@@ -31,9 +31,41 @@ inline int lua_geti(lua_State* L, int idx, lua_Integer n) {
     return lua_type(L, -1);
 }
 
-#define lua_rawlen lua_objlen
+extern int refcount;
+extern int refBaseline;
+extern std::unordered_map<std::string, int> n;
+#include <unordered_map>
 
-#else
+static void printanalytics() {
+    /*
+    std::cout << "Refs: " << refcount;
+    if (refcount == refBaseline) {
+        std::cout << " (baseline)\n";
+    }
+    else {
+        std::cout << "\n";
+    }
+    for (auto& [k,v] : n) {
+        std::cout << "\t" << k << ": " << v << "\n";
+    }
+    */
+}
+
+inline int lua_reference(lua_State* L, const std::string& shorthand) {
+    n[shorthand]++;
+    refcount++;
+    printanalytics();
+    return luaL_ref(L, LUA_REGISTRYINDEX);
+}
+
+inline void lua_unreference(lua_State* L, int ref, const std::string& shorthand) {
+    n[shorthand]--;
+    refcount--;
+    printanalytics();
+    luaL_unref(L, LUA_REGISTRYINDEX, ref);
+}
+
+#define lua_rawlen lua_objlen
 
 #endif
 
@@ -60,7 +92,7 @@ inline sf::Color lua_tocolor(lua_State* L, int idx) {
     lua_rawgeti(L, idx, 2); uint8_t g = static_cast<std::uint8_t>(lua_tonumber(L, -1)); lua_pop(L, 1);
     lua_rawgeti(L, idx, 3); uint8_t b = static_cast<std::uint8_t>(lua_tonumber(L, -1)); lua_pop(L, 1);
     lua_rawgeti(L, idx, 4); uint8_t a = static_cast<std::uint8_t>(lua_tonumber(L, -1)); lua_pop(L, 1);
-    return sf::Color(r, g, b, a);
+    return { r, g, b, a };
 }
 
 template <typename T>

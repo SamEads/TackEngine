@@ -3,8 +3,10 @@
 #include "vendor/json.hpp"
 
 void TilesetManager::initializeLua(LuaState& L, const std::filesystem::path& assets) {
-    // TODO
     TilesetManager& tsMgr = TilesetManager::get();
+
+    luaL_newmetatable(L, "Tileset");
+    lua_pop(L, 1);
 
     lua_getglobal(L, ENGINE_ENV);
     for (auto& it : std::filesystem::directory_iterator(assets / "managed" / "tilesets")) {
@@ -44,7 +46,12 @@ void TilesetManager::initializeLua(LuaState& L, const std::filesystem::path& ass
             nullptr
         );
         tsMgr.tilesets[identifier] = ts;
-        lua_pushlightuserdata(L, &tsMgr.tilesets[identifier]);
+
+        
+        lua_newtable(L);
+            lua_pushlightuserdata(L, &tsMgr.tilesets[identifier]);
+            lua_setfield(L, -2, "__cpp_ptr");
+            luaL_setmetatable(L, "Tileset");
         lua_setfield(L, -2, identifier.c_str());
     }
     lua_pop(L, 1);

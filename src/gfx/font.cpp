@@ -23,7 +23,8 @@ void FontManager::initializeLua(LuaState& L, std::filesystem::path assets) {
         }
 
         lua_getfield(L, -1, "gfx");
-
+            // create_font_from_sprite
+            // gfx::sprite sprite, string order
             lua_pushcfunction(L, [](lua_State* L) -> int {
                 GFX::Sprite* spriteIndex = lua_toclassfromref<GFX::Sprite>(L, 1);
                 std::string order = std::string(lua_tostring(L, 2));
@@ -37,7 +38,8 @@ void FontManager::initializeLua(LuaState& L, std::filesystem::path assets) {
             });
             lua_setfield(L, -2, "create_font_from_sprite");
 
-            // float x, float y, Font* font, int size, int spacing, const std::string& string, sol::table color
+            // draw_font
+            // float x, float y, Font* font, int size, int spacing, const std::string& string, color
             lua_pushcfunction(L, [](lua_State* L) -> int {
                 float x = lua_tonumber(L, 1);
                 float y = lua_tonumber(L, 2);
@@ -82,7 +84,5 @@ void FontManager::initializeLua(LuaState& L, std::filesystem::path assets) {
                 return 0;
             });
             lua_setfield(L, -2, "draw_font");
-
-
     lua_pop(L, 2);
 }

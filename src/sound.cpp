@@ -6,14 +6,13 @@
 using namespace nlohmann;
 
 void SoundManager::initializeLua(LuaState& L, const std::filesystem::path& assets) {
-
 	luaL_newmetatable(L, "SoundAsset");
 	lua_pop(L, 1);
 
 	luaL_newmetatable(L, "SoundInstance");
 	lua_pop(L, 1);
 
-	lua_getglobal(L, ENGINE_ENV); // te
+	lua_getglobal(L, ENGINE_ENV);
 		auto paths = {
 			assets / "sounds",
 			assets / "music"

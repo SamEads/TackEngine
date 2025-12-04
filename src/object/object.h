@@ -5,10 +5,9 @@
 #include <unordered_map>
 #include <SFML/Graphics.hpp>
 #include "vendor/json.hpp"
-#include "sprite.h"
+#include "../gfx/sprite.h"
 #include "luainc.h"
 #include "util/mathhelper.h"
-#include "drawable.h"
 #include "objectid.h"
 
 class Object;
@@ -29,8 +28,11 @@ enum class PropertyType {
 
 int ObjectCreateLua(lua_State* L, bool luaOwned);
 
-class Object : public Drawable {
+class Object {
 public:
+    int depth = 0;
+    bool visible = true;
+
     struct Reference {
         ObjectId id;
         ObjectId roomId;
@@ -64,9 +66,7 @@ public:
 
     std::map<std::string, std::pair<PropertyType, nlohmann::json>> baseProperties;
 
-    Object(LuaState L) : L(L) {
-        this->drawsGui = true;
-    }
+    Object(LuaState L) : L(L) {}
 
     ~Object () = default;
 
@@ -133,10 +133,8 @@ public:
 
     std::vector<sf::Vector2f> getPoints() const;
     const bool extends(Object* o) const;
-    void draw(Room* room, float alpha) override;
-    void beginDraw(Room* room, float alpha) override;
-    void endDraw(Room* room, float alpha) override;
-    void drawGui(Room* room, float alpha) override;
+
+    virtual void draw(Room* room, float alpha);
 };
 
 class ObjectManager {

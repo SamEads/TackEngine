@@ -1,10 +1,16 @@
 #pragma once
 
 #include <iostream>
-#include "object.h"
-#include "collision.h"
+#include "../object/object.h"
 #include "tilemap.h"
 #include "roomreference.h"
+
+void RoomInitializeLua(lua_State* L, const std::filesystem::path& assets);
+void RoomViewInitializeLua(lua_State* L, const std::filesystem::path& assets);
+void BackgroundInitializeLua(lua_State* L, const std::filesystem::path& assets);
+void TilemapInitializeLua(lua_State* L, const std::filesystem::path& assets);
+
+int PushNewInstance(lua_State* L, int originalTableIndex, ObjectId objectId, Object* instance, Object* pseudoclass);
 
 class Background : public Object {
 public:
@@ -19,7 +25,7 @@ public:
 
 class Room {
 public:
-    class Camera {
+    class View {
     public:
         bool stayInBounds = true;
         Room* room = nullptr;
@@ -46,6 +52,8 @@ public:
 public:
     static void initializeLua(LuaState& L, const std::filesystem::path& assets);
 
+    LuaState L;
+
     ObjectId myId = 0;
     ObjectId currentId = 0;
     
@@ -58,11 +66,9 @@ public:
     
     std::unordered_map<ObjectId, Object*> ids {};
 
-    LuaState L;
-
-    int minReserved = 0;
-    int width = 0, height = 0;
-    Camera camera {};
+    int width = 0;
+    int height = 0;
+    View view {};
     float renderCameraX = 0, renderCameraY = 0;
 
     Room(LuaState& L, RoomReference* data);
@@ -86,14 +92,25 @@ public:
         if (!deleteQueue.empty()) {
             std::sort(deleteQueue.begin(), deleteQueue.end(), std::greater<size_t>());
             for (auto& pos : deleteQueue) {
+                int type = 0;
+                if (dynamic_cast<Background*>(instances[pos].get()))
+                    type = 1;
+                if (dynamic_cast<Tilemap*>(instances[pos].get()))
+                    type = 2;
+                std::string vna = std::string((type == 0) ? "instance" : ((type == 1) ? "background" : "tilemap"));
                 size_t size = instances.size();
                 if (pos >= size - 1) {
+                    lua_unreference(L, instances[pos]->tableReference, vna);
+                    instances[pos]->hasTable = false;
+
                     instances.pop_back();
                 }
                 else {
+                    lua_unreference(L, instances[pos]->tableReference, vna);
+                    instances[pos]->hasTable = false;
+
                     std::swap(instances[pos], instances[instances.size() - 1]);
-                    luaL_unref(L, LUA_REGISTRYINDEX, instances.back()->tableReference);
-                    instances.back()->hasTable = false;
+
                     instances.pop_back();
                     instances[pos]->vectorPos = pos;
                 }
@@ -104,47 +121,4 @@ public:
         addQueue.clear();
         deleteQueue.clear();
     }
-
-    // TODO
-    /*
-    Object::Reference instancePlaceScript(Object* caller, float x, float y, sol::object type) {
-        if (type == sol::lua_nil) {
-            return Object::Reference { -1, this->myId, sol::make_object(lua, sol::lua_nil) };
-        }
-
-        auto callerPts = caller->getPoints();
-        for (auto& p : callerPts) {
-            p.x -= caller->x;
-            p.y -= caller->y;
-            p.x += x;
-            p.y += y;
-        }
-
-        if (type.is<Object::Reference>()) {
-            Object::Reference& r = type.as<Object::Reference>();
-            if (!instanceExists(r)) {
-                return Object::Reference { -1, this->myId, sol::make_object(lua, sol::lua_nil) };
-            }
-            if (!r.object->active) {
-                return Object::Reference { -1, this->myId, sol::make_object(lua, sol::lua_nil) };
-            }
-            auto answer = polygonsIntersect(callerPts, r.object->getPoints());
-            if (answer.intersect) {
-                return r;
-            }
-        }
-
-        auto& baseType = type.as<std::unique_ptr<BaseObject>&>();
-        for (auto& i : ids) {
-            if (i.second->active && i.second->extends(baseType.get())) {
-                auto answer = polygonsIntersect(callerPts, i.second->getPoints());
-                if (answer.intersect) {
-                    return i.second->MyReference;
-                }
-            }
-        }
-
-        return Object::Reference { -1, 0, sol::make_object(lua, sol::lua_nil) };
-    }
-    */
 };

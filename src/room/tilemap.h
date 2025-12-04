@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include "object.h"
+#include "object/object.h"
 
 class Tileset;
 class Tilemap : public Object {

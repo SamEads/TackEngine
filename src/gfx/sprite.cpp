@@ -93,12 +93,7 @@ namespace MetaBuilder {
 }
 
 static void CreateSpriteMetatable(LuaState& L) {
-    // MetaBuilder::Push<GFX::Sprite>(L, "width", &GFX::Sprite::width);
-    // MetaBuilder::Push<GFX::Sprite>(L, "height", &GFX::Sprite::height);
-    // MetaBuilder::Push<GFX::Sprite>(L, "origin_x", &GFX::Sprite::originX);
-    // MetaBuilder::Push<GFX::Sprite>(L, "origin_y", &GFX::Sprite::originY);
-
-    luaL_newmetatable(L, "__te_sprite_index");
+    luaL_newmetatable(L, "SpriteIndex");
         lua_pushcfunction(L, [](lua_State* L) -> int {
             const char* key = lua_tostring(L, 2);
             auto spr = lua_toclassfromref<GFX::Sprite>(L, 1);
@@ -378,12 +373,10 @@ static void LoadSpritesIntoEnvironment(LuaState& L, const std::filesystem::path&
     for (const auto& path : paths) {
         for (auto& it : std::filesystem::directory_iterator(path)) {
             std::string identifier = it.path().filename().replace_extension("").string();
-            if (GFX::sprites.find(identifier) != GFX::sprites.end()) {
-                continue;
-            }
-            if (!it.is_directory() && it.path().extension() != ".png") {
-                continue;
-            }
+            
+            if (GFX::sprites.find(identifier) != GFX::sprites.end()) continue;
+            if (!it.is_directory() && it.path().extension() != ".png") continue;
+
             bool isPng = !it.is_directory();
             int pad = 2;
             sf::Image src;
@@ -396,13 +389,13 @@ static void LoadSpritesIntoEnvironment(LuaState& L, const std::filesystem::path&
             std::unique_ptr<GFX::Sprite>& spr = GFX::sprites[identifier];
 
             lua_newtable(L); // tbl, te
-                luaL_setmetatable(L, "__te_sprite_index");
-                lua_pushlightuserdata(L, spr.get()); // ud, tbl, te
-                lua_setfield(L, -2, "__cpp_ptr"); // tbl, te
+            luaL_setmetatable(L, "SpriteIndex");
+            lua_pushlightuserdata(L, spr.get()); // ud, tbl, te
+            lua_setfield(L, -2, "__cpp_ptr"); // tbl, te
             lua_setfield(L, -2, identifier.c_str()); // te
 
             lua_getfield(L, -1, identifier.c_str()); // tbl, te
-            int spriteTable = luaL_ref(L, LUA_REGISTRYINDEX); // te
+            int spriteTable = lua_reference(L, "sprite"); // te
 
             spr->ref = spriteTable;
 
@@ -450,51 +443,51 @@ static void LoadSpritesIntoEnvironment(LuaState& L, const std::filesystem::path&
                         frameCountY = offByHeight;
                     }
                     if (spr->width == -1 || spr->height == -1) {
-                        spr->width = src.getSize().x;
-                        spr->height = src.getSize().y;
-                            frameCountX = 1;
-                            frameCountY = 1;
-                        }
-                        if (j.contains("hitbox") && j["hitbox"].size() == 4) {
-                            autoHitbox = false;
-                            std::vector<float> hitbox = j["hitbox"];
-                            spr->hitbox.position = { hitbox[0], hitbox[1] };
-                            spr->hitbox.size.x = hitbox[2] - hitbox[0] + 1.0f;
-                            spr->hitbox.size.y = hitbox[3] - hitbox[1] + 1.0f;
-                        }
-                        if (j.contains("origin") && j["origin"].size() == 2) {
-                            spr->originX = j["origin"][0].get<int>();
-                            spr->originY = j["origin"][1].get<int>();
-                        }
+                    spr->width = src.getSize().x;
+                    spr->height = src.getSize().y;
+                        frameCountX = 1;
+                        frameCountY = 1;
                     }
-                    
-                    if (autoSize) {
-                        spr->width = spr->height = size.y;
-                        frameCountX = size.x / size.y;
-                        if (frameCountX == 0) {
-                            frameCountX = 1;
-                            spr->width = size.x;
-                            spr->height = size.y;
-                        }
+                    if (j.contains("hitbox") && j["hitbox"].size() == 4) {
+                        autoHitbox = false;
+                        std::vector<float> hitbox = j["hitbox"];
+                        spr->hitbox.position = { hitbox[0], hitbox[1] };
+                        spr->hitbox.size.x = hitbox[2] - hitbox[0] + 1.0f;
+                        spr->hitbox.size.y = hitbox[3] - hitbox[1] + 1.0f;
                     }
-                    if (autoHitbox) {
-                        spr->hitbox.position = { 0, 0 };
-                        spr->hitbox.size = { static_cast<float>(spr->width), static_cast<float>(spr->height) };
-                    }
-
-                    if (frameCountY == -1) {
-                        tex = CreatePaddedTexture(src, spr->width, spr->height, frameCountX, 1, pad, 0, 0, 0, 0, &frameCoords);
-                    }
-                    else {
-                        tex = CreatePaddedTexture(src, spr->width, spr->height, frameCountX, frameCountY, pad, 0, 0, 0, 0, &frameCoords);
+                    if (j.contains("origin") && j["origin"].size() == 2) {
+                        spr->originX = j["origin"][0].get<int>();
+                        spr->originY = j["origin"][1].get<int>();
                     }
                 }
+                    
+                if (autoSize) {
+                    spr->width = spr->height = size.y;
+                    frameCountX = size.x / size.y;
+                    if (frameCountX == 0) {
+                        frameCountX = 1;
+                        spr->width = size.x;
+                        spr->height = size.y;
+                    }
+                }
+                if (autoHitbox) {
+                    spr->hitbox.position = { 0, 0 };
+                    spr->hitbox.size = { static_cast<float>(spr->width), static_cast<float>(spr->height) };
+                }
 
-                spr->texture = tex;
-                spr->sprite = std::make_unique<sf::Sprite>(spr->texture);
-                spr->frames = frameCoords;
+                if (frameCountY == -1) {
+                    tex = CreatePaddedTexture(src, spr->width, spr->height, frameCountX, 1, pad, 0, 0, 0, 0, &frameCoords);
+                }
+                else {
+                    tex = CreatePaddedTexture(src, spr->width, spr->height, frameCountX, frameCountY, pad, 0, 0, 0, 0, &frameCoords);
+                }
             }
+
+            spr->texture = tex;
+            spr->sprite = std::make_unique<sf::Sprite>(spr->texture);
+            spr->frames = frameCoords;
         }
+    }
 }
 
 namespace GFX {

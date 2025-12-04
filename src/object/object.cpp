@@ -3,7 +3,7 @@
 #include "vendor/json.hpp"
 #include "object.h"
 #include "game.h"
-#include "room.h"
+#include "room/room.h"
 
 using namespace nlohmann;
 
@@ -135,10 +135,6 @@ void Object::draw(Room *room, float alpha) {
 	spriteIndex->draw(*Game::get().getRenderTarget(), { interpX, interpY }, imageIndex, { xScale, yScale }, sf::Color::White, imageAngle);
 }
 
-void Object::beginDraw(Room *room, float alpha) { }
-void Object::endDraw(Room *room, float alpha) { }
-void Object::drawGui(Room *room, float alpha) { }
-
 void ObjectManager::registerObject(const std::string &mapIdentifier, int luaRegistryRef, Object *innerUserdataPointer) {
     tilemapObjects[mapIdentifier] = { innerUserdataPointer, luaRegistryRef };
 }
@@ -182,7 +178,7 @@ int ObjectCreateLua(lua_State* L, bool OLDARG) {
     if (argcount > 0 && !lua_isnil(L, 1) && !lua_isstring(L, 1)) {
         // Set my metatable to the base object
         // TODO: Maybe push the metatable of the parent? idk
-        luaL_setmetatable(L, "__te_object");
+        luaL_setmetatable(L, "Object");
 
         // Set parent table to the parent fed in
         lua_pushvalue(L, 1);                // parent table, this
@@ -197,7 +193,7 @@ int ObjectCreateLua(lua_State* L, bool OLDARG) {
         lua_pushvalue(L, -1);               // this, this
         lua_setfield(L, -2, "__index");     // this(.__index = this)
 
-        luaL_setmetatable(L, "__te_object");
+        luaL_setmetatable(L, "Object");
     }
 
     Object* o = new(lua_newuserdata(L, sizeof(Object))) Object(LuaState::get(L)); // ptr, this
@@ -224,7 +220,7 @@ int ObjectCreateLua(lua_State* L, bool OLDARG) {
         const char* tilemapstr = lua_tostring(L, 2);
 
         lua_pushvalue(L, -1);                               // push the table again (this)
-        int tableRef = luaL_ref(L, LUA_REGISTRYINDEX);      // store and get reference
+        int tableRef = lua_reference(L, "object");      // store and get reference
 
         // Immediately open back up again and set self to self..
         lua_rawgeti(L, LUA_REGISTRYINDEX, tableRef);
@@ -401,7 +397,7 @@ void ObjectManager::initializeLua(LuaState& L, const std::filesystem::path &asse
         });
         lua_setfield(L, -2, "object_create");
 
-        luaL_newmetatable(L, "__te_object");
+        luaL_newmetatable(L, "Object");
             // Get
             // 1: object, 2: key
             lua_pushcfunction(L, [](lua_State* L) -> int {
@@ -479,8 +475,8 @@ void ObjectManager::initializeLua(LuaState& L, const std::filesystem::path &asse
                 lua_getfield(L, -1, key);
                 if (!lua_isnil(L, -1)) {
                     lua_remove(L, -2);
-                    int retargs = lua_tocfunction(L, -1)(L);
-                    return retargs;
+                    int retArgs = lua_tocfunction(L, -1)(L);
+                    return retArgs;
                 }
                 lua_pop(L, 2);
 

@@ -1,6 +1,5 @@
 #include <iostream>
 #include "game.h"
-#include "drawable.h"
 
 #include <ProcessInfo.h>
 #include <SystemInformation.h>
@@ -43,9 +42,9 @@ void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
             lua_setfield(L, -2, "get_height");
 
             lua_pushcfunction(L, [](lua_State* L) -> int {
-                sf::Vector2u displaySize = sf::VideoMode::getDesktopMode().size;
-                sf::Vector2u windowSize = Game::get().window->getSize();
-                Game::get().window->setPosition(sf::Vector2i {
+                auto displaySize = sf::VideoMode::getDesktopMode().size;
+                auto windowSize = Game::get().window->getSize();
+                Game::get().window->setPosition({
                     static_cast<int>((displaySize.x / 2) - (windowSize.x / 2)),
                     static_cast<int>((displaySize.y / 2) - (windowSize.y / 2))
                 });

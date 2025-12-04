@@ -5,8 +5,8 @@
 #include "luainc.h"
 #include "util/profiler.h"
 #include "util/timer.h"
-#include "roomreference.h"
-#include "objectid.h"
+#include "room/roomreference.h"
+#include "object/objectid.h"
 
 class Game {
 public:

@@ -5,15 +5,15 @@ extern "C" {
 #endif
 #include <fstream>
 #include "vendor/json.hpp"
-#include "sprite.h"
-#include "object.h"
-#include "tileset.h"
 #include "game.h"
-#include "room.h"
-#include "keys.h"
-#include "shader.h"
 #include "sound.h"
-#include "font.h"
+#include "object/object.h"
+#include "room/room.h"
+#include "keyboard/keys.h"
+#include "gfx/sprite.h"
+#include "gfx/tileset.h"
+#include "gfx/shader.h"
+#include "gfx/font.h"
 
 #define GMC_EMBEDDED
 #define GMCONVERT_IMPLEMENTATION
@@ -197,6 +197,8 @@ int main() {
         lua_pop(lua, 1); // pop init null
     }
     lua_pop(lua, 1); // pop te
+
+    refBaseline = refcount;
 
     sf::Clock clock;
     sf::Clock stupid;
