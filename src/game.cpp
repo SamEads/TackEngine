@@ -64,15 +64,17 @@ void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
             });
             lua_setfield(L, -2, "set_tick_rate");
 
-            lua_pushcfunction(L, [](lua_State* L) -> int {
 #ifdef _WIN32
-                auto memory = process.GetMemoryUsage() / 1'000;
-#else
-                double memory = 0;
-#endif
-                lua_pushnumber(L, memory);
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_pushnumber(L, process.GetMemoryUsage() / 1'000);
                 return 1;
             });
+#else
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_pushnumber(L, 0);
+                return 1;
+            });
+#endif
             lua_setfield(L, -2, "get_memory");
             
             lua_newtable(L);
