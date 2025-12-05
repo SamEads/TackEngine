@@ -1,19 +1,21 @@
+# options
+set(USE_LUA_JIT false)
+
 cmake_minimum_required(VERSION 3.28)
 
 project(Tack-Engine LANGUAGES CXX C)
-
-set(USE_LUA_JIT true)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-include(FetchContent)
-set(FETCHCONTENT_QUIET FALSE)
-
-# sfml
 include(CMakePackageConfigHelpers)
 include(CheckCXXCompilerFlag)
 include(CMakeDependentOption)
 include(GNUInstallDirs)
+include(ExternalProject)
+include(FetchContent)
+set(FETCHCONTENT_QUIET TRUE)
+
+# sfml lib
 FetchContent_Declare(
     SFML
     GIT_REPOSITORY https://github.com/SFML/SFML.git
@@ -24,14 +26,30 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SFML)
 
+# lua (non-jit) lib
 if(NOT USE_LUA_JIT)
-    file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
-        "external/lua/src/*.c"
+    FetchContent_Declare(
+        lua
+        URL "https://www.lua.org/ftp/lua-5.4.8.tar.gz"
+    )
+    FetchContent_MakeAvailable(lua)
+    file(GLOB LUA_SOURCES
+        "${lua_SOURCE_DIR}/src/*.c"
+    )
+    list(REMOVE_ITEM LUA_SOURCES
+        "${lua_SOURCE_DIR}/src/lua.c"
+        "${lua_SOURCE_DIR}/src/luac.c"
+    )
+    add_library(lua STATIC
+        ${LUA_SOURCES}
+    )
+    target_include_directories(lua PUBLIC
+        "${lua_SOURCE_DIR}/src"
     )
 endif()
 
+# main src files
 file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
-    ${PROJECT_SOURCES}
     "src/*.cpp"
     "src/*.c"
     "external/sys_info/src/*.cpp"
@@ -39,50 +57,41 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
 
 add_executable(${PROJECT_NAME})
 
+# compiler flags
 if(MSVC)
-    set(CMAKE_CXX_FLAGS "/Ox /EHsc /MP")
+    set(CMAKE_CXX_FLAGS
+        "/Ox /EHsc /MP"
+    )
 endif()
 
+# target src files we specified in project sources
 target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
+
+# target include files so you can see header defs
 target_include_directories(${PROJECT_NAME} PRIVATE
     "src/"
     "external/sys_info/include"
 )
 
-if(NOT USE_LUA_JIT)
-    target_include_directories(${PROJECT_NAME} PRIVATE
-        "external/lua/include"
-    )
-else()
-    target_include_directories(${PROJECT_NAME} PRIVATE
-        "external/lua/jit_include"
-    )
-endif()
-
+# link against sfml
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SFML::Graphics
     SFML::Audio
 )
 
-#add_custom_command(
-#    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/embedded_scripts.h
-#    COMMAND ${CMAKE_COMMAND} 
-#        -DSCRIPTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/assets/scripts
-#        -DOUTPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/src/embedded_scripts.h
-#        -P ${CMAKE_CURRENT_SOURCE_DIR}/embed_scripts.cmake
-#    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/embed_scripts.cmake
-#    COMMENT "Generating embedded_scripts.h"
-#    VERBATIM
-#)
-#add_custom_target(generate_embedded_scripts DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/embedded_scripts.h)
-#add_dependencies(${PROJECT_NAME} generate_embedded_scripts)
-target_compile_definitions(${PROJECT_NAME} PRIVATE EMBED_SCRIPTS)
-    
-if(USE_LUA_JIT)
+# link against lua
+if(NOT USE_LUA_JIT)
+    target_link_libraries(${PROJECT_NAME} PRIVATE lua)
+else()
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        "lua/jit_include"
+    )
     target_link_directories(${PROJECT_NAME} PRIVATE
         "external/lua/lib"
     )
-    target_compile_definitions(${PROJECT_NAME} PUBLIC USE_LUA_JIT)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+        USE_LUA_JIT
+    )
     target_link_libraries(${PROJECT_NAME} PRIVATE
         lua51
         luajit

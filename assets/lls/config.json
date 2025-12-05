@@ -1,9 +1,7 @@
 {
-  "name": "TV Time",
-  "words": ["tv-time-addon", "%s+-tvtime%-addon"],
+  "name": "Tack Engine",
+  "words": ["tack-engine-addon", "%s+-tackengine%-addon"],
   "settings": {
-    // "Lua.workspace.preloadFileSize": 5000,
-    // "Lua.workspace.ignoreDir": ["ignore-me"],
     "Lua.diagnostics.groupSeverity": { "await": "Error", },
     "Lua.diagnostics.inject_field": { "await": "Error" }
   }
