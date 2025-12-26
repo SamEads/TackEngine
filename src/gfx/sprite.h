@@ -5,6 +5,14 @@
 #include "luainc.h"
 
 namespace GFX {
+    class Canvas {
+    public:
+        float x, y;
+        bool base;
+        sf::RenderTexture rt;
+        ~Canvas() = default;
+    };
+
     class Sprite {
     public:
         struct Frame {

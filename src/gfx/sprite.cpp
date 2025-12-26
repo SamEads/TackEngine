@@ -168,7 +168,7 @@ static void CreateSpriteMetatable(LuaState& L) {
 
 static void InitializeCoreFunctions(LuaState& L) {
     lua_pushcfunction(L, [](lua_State* L) -> int {
-        Game::get().currentRenderer->clear(lua_tocolor(L, 1));
+        Game::get().currentRenderer->rt.clear(lua_tocolor(L, 1));
         return 0;
     });
     lua_setfield(L, -2, "clear");
@@ -182,13 +182,19 @@ static void InitializeCoreFunctions(LuaState& L) {
 }
 
 static void InitializeCanvasFunctions(LuaState& L) {
-    lua_pushcfunction(L, [](lua_State* L) -> int {
-        unsigned int width = static_cast<unsigned int>(lua_tointeger(L, 1));
-        unsigned int height = static_cast<unsigned int>(lua_tointeger(L, 2));
+    luaL_newmetatable(L, "Canvas");
+    lua_pop(L, 1);
 
-        void* mem = lua_newuserdata(L, sizeof(sf::RenderTexture));
-        auto canvas = new(mem) sf::RenderTexture(sf::Vector2u { width, height });
-        
+    lua_pushcfunction(L, [](lua_State* L) -> int {
+        unsigned int width =    static_cast<unsigned int>(lua_tointeger(L, 1));
+        unsigned int height =   static_cast<unsigned int>(lua_tointeger(L, 2));
+
+        void* mem = lua_newuserdata(L, sizeof(GFX::Canvas));
+        auto canvas = new(mem) GFX::Canvas();
+        canvas->base = false;
+        canvas->rt = sf::RenderTexture(sf::Vector2u { width, height });
+        luaL_setmetatable(L, "Canvas");
+
         return 1;
     });
     lua_setfield(L, -2, "create_canvas");
@@ -198,25 +204,62 @@ static void InitializeCanvasFunctions(LuaState& L) {
             Game::get().currentRenderer = nullptr;
         }
         else {
-            sf::RenderTexture* target = static_cast<sf::RenderTexture*>(lua_touserdata(L, 1));
-            Game::get().currentRenderer = target;
+            GFX::Canvas* canvas = static_cast<GFX::Canvas*>(luaL_checkudata(L, 1, "Canvas"));
+            Game::get().currentRenderer = canvas;
         }
         return 0;
     });
     lua_setfield(L, -2, "set_canvas");
 
+    // canvas, x, y
     lua_pushcfunction(L, [](lua_State* L) -> int {
-        sf::RenderTexture* target = static_cast<sf::RenderTexture*>(lua_touserdata(L, 1));
+        GFX::Canvas* canvas = static_cast<GFX::Canvas*>(luaL_checkudata(L, 1, "Canvas"));
+
+        lua_pushnumber(L, canvas->x);
+        lua_pushnumber(L, canvas->y);
+
+        return 2;
+    });
+    lua_setfield(L, -2, "get_canvas_render_position");
+
+    // canvas, x, y
+    lua_pushcfunction(L, [](lua_State* L) -> int {
+        GFX::Canvas* canvas = static_cast<GFX::Canvas*>(luaL_checkudata(L, 1, "Canvas"));
+
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+
+        canvas->x = x;
+        canvas->y = y;
+
+        auto targetSize = canvas->rt.getSize();
+        sf::View view = canvas->rt.getView();
+
+        view.setCenter({
+            x + (targetSize.x / 2.0f),
+            y + (targetSize.y / 2.0f)
+        });
+
+        canvas->rt.setView(view);
+        
+        return 0;
+    });
+    lua_setfield(L, -2, "set_canvas_render_position");
+
+    // canvas, width, height
+    lua_pushcfunction(L, [](lua_State* L) -> int {
+        GFX::Canvas* canvas = static_cast<GFX::Canvas*>(luaL_checkudata(L, 1, "Canvas"));
         unsigned int width = static_cast<unsigned int>(lua_tointeger(L, 2));
         unsigned int height = static_cast<unsigned int>(lua_tointeger(L, 3));
-        bool res = target->resize({ width, height }); //nodisc
-        return 0;
+        bool res = canvas->rt.resize({ width, height });
+        lua_pushboolean(L, res);
+        return 1;
     });
     lua_setfield(L, -2, "resize_canvas");
 
     // sf::RenderTexture* target, float x, float y, float xscale, float yscale, float originx, float originy, float angle
     lua_pushcfunction(L, [](lua_State* L) -> int {
-        sf::RenderTexture* target = static_cast<sf::RenderTexture*>(lua_touserdata(L, 1));
+        GFX::Canvas* canvas = static_cast<GFX::Canvas*>(luaL_checkudata(L, 1, "Canvas"));
         float x = lua_tonumber(L, 2);
         float y = lua_tonumber(L, 3);
         float xscale = lua_tonumber(L, 4);
@@ -225,9 +268,9 @@ static void InitializeCanvasFunctions(LuaState& L) {
         float originy = lua_tonumber(L, 7);
         float angle = lua_tonumber(L, 8);
 
-        target->display();
+        canvas->rt.display();
         Game& game = Game::get();
-        sf::Sprite s(target->getTexture());
+        sf::Sprite s(canvas->rt.getTexture());
         s.setPosition({ x, y });
         s.setScale({ xscale, yscale });
         s.setOrigin({ originx, originy });

@@ -12,9 +12,9 @@ public:
     Tileset* tileset;
     Tilemap(LuaState L) : Object(L) {}
     void draw(Room* room, float alpha) override;
+    void drawVertices(Room* room, float alpha, float x, float y, float w, float h);
     int get(int x, int y);
     std::tuple<int, bool, bool, bool> getExt(int x, int y);
     void set(int x, int y, int value);
     void setExt(int x, int y, int value, bool mirror, bool flip, bool rotate);
-    static void initializeLua(LuaState L);
 };

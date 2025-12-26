@@ -69,15 +69,12 @@ public:
     int width = 0;
     int height = 0;
     View view {};
-    float renderCameraX = 0, renderCameraY = 0;
 
     Room(LuaState& L, RoomReference* data);
     Room(LuaState L);
     ~Room();
 
     void load(int roomIdx);
-
-    void setView(float cx, float cy);
 
     void updateQueue() {
         // Add queued objects

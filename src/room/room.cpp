@@ -389,18 +389,3 @@ void Room::createAndRoomStartEvents(int roomIdx) {
         ptr->yPrevRender = ptr->yPrev = ptr->y;
     }
 }
-
-void Room::setView(float cx, float cy) {
-    auto target = Game::get().getRenderTarget();
-    auto targetSize = target->getSize();
-    float targetWidth = targetSize.x;
-    float targetHeight = targetSize.y;
-
-    sf::View view(sf::FloatRect { { 0.0f, 0.0f }, { targetWidth, targetHeight } });
-
-    view.setCenter({ cx + targetWidth / 2.0f, cy + targetHeight / 2.0f });
-    target->setView(view);
-
-    renderCameraX = cx;
-    renderCameraY = cy;
-}

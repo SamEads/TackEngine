@@ -1,4 +1,4 @@
-#include <iostream>
+#include <string.h>
 #include "game.h"
 
 #ifdef _WIN32

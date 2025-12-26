@@ -1,5 +1,6 @@
 #include "room.h"
 #include "../gfx/tileset.h"
+#include "../game.h"
 
 // getters & setters
 
@@ -74,6 +75,42 @@ static int TilemapNewIndex(lua_State* L) {
     }
     lua_pop(L, 2);
 
+
+    if (strcmp(key, "draw") == 0) {
+        lua_pushvalue(L, 2);    // k
+        lua_pushvalue(L, 3);    // v
+        lua_rawset(L, 1);       // -k,-v
+        return 0;
+    }
+
+    return 0;
+}
+
+static int TilemapDrawVerticesExt(lua_State* L) {
+    Tilemap* tilemap = lua_toclass<Tilemap>(L, 1);
+    Room* room = lua_toclass<Room>(L, 2);
+    float alpha = luaL_checknumber(L, 3);
+    float x = luaL_checknumber(L, 4);
+    float y = luaL_checknumber(L, 5);
+    float w = luaL_checknumber(L, 6);
+    float h = luaL_checknumber(L, 7);
+
+    auto& game = Game::get();
+    auto view = game.getRenderTarget()->getView();
+    tilemap->drawVertices(room, alpha, x, y, w, h);
+
+    return 0;
+}
+
+static int TilemapDrawVertices(lua_State* L) {
+    Tilemap* tilemap = lua_toclass<Tilemap>(L, 1);
+    Room* room = lua_toclass<Room>(L, 2);
+    float alpha = luaL_checknumber(L, 3);
+
+    auto& game = Game::get();
+    auto view = game.getRenderTarget()->getView();
+    tilemap->drawVertices(room, alpha, game.getCanvasPosX(), game.getCanvasPosY(), view.getSize().x, view.getSize().y);
+
     return 0;
 }
 
@@ -85,6 +122,23 @@ static int TilemapSetTileset(lua_State* L) {
 }
 
 // room funcs
+static int RoomTilemapsGet(lua_State* L) {
+    auto room = lua_toclass<Room>(L, 1);
+
+    int count = 0;
+
+    lua_newtable(L);
+
+    for (auto& tilemap : room->tilemaps) {
+        if (tilemap->hasTable) {
+            count++;
+            lua_rawgeti(L, LUA_REGISTRYINDEX, tilemap->tableReference);
+            lua_rawseti(L, -2, count);
+        }
+    }
+
+    return 1;
+}
 
 static int RoomTilemapGet(lua_State* L) {
     auto room = lua_toclass<Room>(L, 1);
@@ -105,11 +159,14 @@ static const luaL_Reg tilemapMetaFunctions[] = {
     { "__index",        TilemapIndex },
     { "__newindex",     TilemapNewIndex },
     { "set_tileset",    TilemapSetTileset },
+    { "draw_vertices",  TilemapDrawVertices },
+    { "draw_vertices_ext",  TilemapDrawVerticesExt },
     { NULL, NULL }
 };
 
 static const luaL_Reg roomTilemapFunctions[] = {
     { "tilemap_get", RoomTilemapGet },
+    { "tilemaps_get", RoomTilemapsGet },
     { NULL, NULL }
 };
 

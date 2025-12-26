@@ -2,8 +2,10 @@
 #include "game.h"
 
 void Background::draw(Room* room, float alpha) {
-    float cx = room->renderCameraX;
-    float cy = room->renderCameraY;
+    auto& game = Game::get();
+
+    float cx = game.getCanvasPosX();
+    float cy = game.getCanvasPosY();
 
     float x = cx - 1;
     float y = cy - 1;

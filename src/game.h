@@ -7,6 +7,7 @@
 #include "util/timer.h"
 #include "room/roomreference.h"
 #include "object/objectid.h"
+#include "gfx/sprite.h"
 
 class Game {
 public:
@@ -23,10 +24,28 @@ public:
     Timer timer;
     float fps = 0;
 
-    sf::RenderTarget* currentRenderer;
-    std::unique_ptr<sf::RenderTexture> consoleRenderer;
+    GFX::Canvas* currentRenderer;
     std::unique_ptr<sf::RenderWindow> window;
-    inline sf::RenderTarget* getRenderTarget() { return (currentRenderer == nullptr) ? window.get() : currentRenderer; }
+    float winX = 0, winY = 0;
+
+    inline sf::RenderTarget* getRenderTarget() {
+        if (currentRenderer == nullptr) {
+            return window.get();
+        }
+        return &currentRenderer->rt;
+    }
+    inline float getCanvasPosX() {
+        if (currentRenderer == nullptr) {
+            return winX;
+        }
+        return currentRenderer->x;
+    }
+    inline float getCanvasPosY() {
+        if (currentRenderer == nullptr) {
+            return winY;
+        }
+        return currentRenderer->y;
+    }
     sf::Shader* currentShader;
 
     void initializeLua(LuaState& L, const std::filesystem::path& assets);

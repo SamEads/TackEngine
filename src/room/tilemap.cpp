@@ -4,25 +4,28 @@
 #include "room/room.h"
 #include "game.h"
 
-void Tilemap::initializeLua(LuaState L) {}
-
 void Tilemap::draw(Room* room, float alpha) {
+    auto& game = Game::get();
+    auto view = game.getRenderTarget()->getView();
+    drawVertices(room, alpha, game.getCanvasPosX(), game.getCanvasPosY(), view.getSize().x, view.getSize().y);
+}
+
+void Tilemap::drawVertices(Room *room, float alpha, float cx, float cy, float w, float h) {
     int tileWidth = tileset->tileWidth;
     int tileHeight = tileset->tileHeight;
 
-    if (tileWidth == 0 || tileHeight == 0) {
-        return;
-    }
+    if (tileWidth == 0 || tileHeight == 0) return;
 
-    float cx = room->renderCameraX;
-    float cy = room->renderCameraY;
+    auto& game = Game::get();
 
-    int thisCx =    std::max(0, (static_cast<int>(cx) / tileWidth) - 1);
-    int thisCx2 =   thisCx + static_cast<int>(ceilf(room->view.width / (float)tileWidth)) + 2;
+    sf::RenderTarget* target = game.getRenderTarget();
+
+    int thisCx =    std::max(0, (static_cast<int>(cx) / tileWidth));
+    int thisCx2 =   thisCx + static_cast<int>(ceilf(w / (float)tileWidth)) + 1;
     int fullW =     std::min(thisCx2, tileCountX);
     
-    int thisCy =    std::max(0, (static_cast<int>(cy) / tileHeight) - 1);
-    int thisCy2 =   thisCy + static_cast<int>(ceilf(room->view.height / (float)tileHeight)) + 2;
+    int thisCy =    std::max(0, (static_cast<int>(cy) / tileHeight));
+    int thisCy2 =   thisCy + static_cast<int>(ceilf(h / (float)tileHeight)) + 1;
     int fullH =     std::min(thisCy2, tileCountY);
 
     int padding = tileset->padding;
@@ -30,7 +33,6 @@ void Tilemap::draw(Room* room, float alpha) {
     int totalTiles = tileData.size();
     sf::VertexArray vertices(sf::PrimitiveType::Triangles);
     
-    // Build all vertices in one batch
     for (int xx = thisCx; xx < fullW; ++xx) {
         for (int yy = thisCy; yy < fullH; ++yy) {
             int pos = xx + (yy * tileCountX);
@@ -55,18 +57,18 @@ void Tilemap::draw(Room* room, float alpha) {
             int texX = padding + tileX * (tileWidth + 2 * padding);
             int texY = padding + tileY * (tileHeight + 2 * padding);
 
-            sf::Vector2f positions[4] = {
-                {x, y},
-                {x + tileWidth, y},
-                {x + tileWidth, y + tileHeight},
-                {x, y + tileHeight}
+            sf::Vector2f positions[] = {
+                { x, y },
+                { x + tileWidth, y },
+                { x + tileWidth, y + tileHeight },
+                { x, y + tileHeight} 
             };
             
-            sf::Vector2f texCoords[4] = {
-                {(float)texX, (float)texY},
-                {(float)(texX + tileWidth), (float)texY},
-                {(float)(texX + tileWidth), (float)(texY + tileHeight)},
-                {(float)texX, (float)(texY + tileHeight)}
+            sf::Vector2f texCoords[] = {
+                { (float)texX, (float)texY },
+                { (float)(texX + tileWidth), (float)texY },
+                { (float)(texX + tileWidth), (float)(texY + tileHeight) },
+                { (float)texX, (float)(texY + tileHeight) }
             };
 
             if (mirror) {
@@ -85,19 +87,16 @@ void Tilemap::draw(Room* room, float alpha) {
                 texCoords[1] = temp;
             }
 
-            // Tri 1
             vertices.append(sf::Vertex{positions[0], sf::Color::White, texCoords[0]});
             vertices.append(sf::Vertex{positions[1], sf::Color::White, texCoords[1]});
             vertices.append(sf::Vertex{positions[2], sf::Color::White, texCoords[2]});
             
-            // Tri 2
             vertices.append(sf::Vertex{positions[0], sf::Color::White, texCoords[0]});
             vertices.append(sf::Vertex{positions[2], sf::Color::White, texCoords[2]});
             vertices.append(sf::Vertex{positions[3], sf::Color::White, texCoords[3]});
         }
     }
 
-    auto target = Game::get().getRenderTarget();
     sf::Shader* shader = Game::get().currentShader;
 
     sf::RenderStates states;

@@ -99,16 +99,6 @@ static int RoomGet(lua_State* L) {
         return 1;
     }
 
-    if (strcmp("render_x", key) == 0) {
-        lua_pushnumber(L, room->renderCameraX);
-        return 1;
-    }
-
-    if (strcmp("render_y", key) == 0) {
-        lua_pushnumber(L, room->renderCameraY);
-        return 1;
-    }
-
     lua_pushvalue(L, 2); // push key
     lua_rawget(L, 1); // consumes key
 
@@ -531,14 +521,28 @@ static int RoomInstanceCreate(lua_State* L) {
     return 1;
 }
 
+/*
 static int RoomSetRenderPosition(lua_State* L) {
     Room* room = lua_toclass<Room>(L, 1);
-    float x = lua_tonumber(L, 2);
-    float y = lua_tonumber(L, 3);
-    room->setView(x, y);
+    float cx = lua_tonumber(L, 2);
+    float cy = lua_tonumber(L, 3);
+
+    auto target = Game::get().getRenderTarget();
+    auto targetSize = target->getSize();
+    float targetWidth = targetSize.x;
+    float targetHeight = targetSize.y;
+
+    sf::View view(sf::FloatRect { { 0.0f, 0.0f }, { targetWidth, targetHeight } });
+
+    view.setCenter({ cx + targetWidth / 2.0f, cy + targetHeight / 2.0f });
+    target->setView(view);
+
+    room->renderCameraX = cx;
+    room->renderCameraY = cy;
 
     return 0;
 }
+*/
 
 static int RoomInstanceListCreate(lua_State* L) {
     Room* room = lua_toclass<Room>(L, 1);
@@ -595,7 +599,6 @@ static const luaL_Reg roomFunctions[] = {
     { "instance_exists",        RoomInstanceExists },
     { "instance_destroy",       RoomInstanceDestroy },
     { "instance_list_create",   RoomInstanceListCreate },
-    { "set_render_position",    RoomSetRenderPosition },
     { "instance_count",         RoomInstanceCount },
     { NULL, NULL }
 };
