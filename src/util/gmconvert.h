@@ -15,6 +15,8 @@
 #include <sstream>
 #include <thread>
 #include <mutex>
+#include <algorithm>
+#include <cctype>
 #include "vendor/json.hpp"
 
 using namespace nlohmann;
@@ -93,6 +95,24 @@ static void AddMessage(const std::string& msg) {
 #else
 	std::cout << msg << "\n";
 #endif
+}
+
+static bool TryParseBooleanString(const std::string& value, bool& out) {
+	std::string lowered;
+	lowered.reserve(value.size());
+	for (unsigned char c : value) {
+		lowered.push_back(static_cast<char>(std::tolower(c)));
+	}
+
+	if (lowered == "true" || lowered == "1" || lowered == "yes" || lowered == "on") {
+		out = true;
+		return true;
+	}
+	if (lowered == "false" || lowered == "0" || lowered == "no" || lowered == "off") {
+		out = false;
+		return true;
+	}
+	return false;
 }
 
 template <typename T>
@@ -419,8 +439,18 @@ public:
 				else if (t == 1) {
 					object["value"] = std::stoi(p["value"].get<std::string>());
 				}
+				else if (t == 2) {
+					if (p["value"] == "True" || p["value"] == "true") {
+						object["value"] = true;
+					}
+					else {
+						object["value"] = false;
+					}
+				}
 				else if (t == 3) {
-					object["value"] = (p["value"] == "true" || p["value"] == "True") ? true : false;
+					std::string v = p["value"].get<std::string>();
+					for (auto &c : v) c = std::tolower(c);
+					object["value"] = (v == "true");
 				}
 				else {
 					object["value"] = p["value"].get<std::string>();
@@ -778,8 +808,26 @@ public:
 					else if (v.is_boolean()) {
 						uint8_t type = 2;
 						bin.write(reinterpret_cast<const char*>(&type), sizeof(type));
-						bool val = v.get<bool>();
+						uint8_t val = v.get<bool>() ? 1u : 0u;
 						bin.write(reinterpret_cast<const char*>(&val), sizeof(val));
+					}
+					else if (v.is_string()) {
+						bool boolValue = false;
+						if (TryParseBooleanString(v.get<std::string>(), boolValue)) {
+							uint8_t type = 2;
+							bin.write(reinterpret_cast<const char*>(&type), sizeof(type));
+							uint8_t val = boolValue ? 1u : 0u;
+							bin.write(reinterpret_cast<const char*>(&val), sizeof(val));
+						}
+						else {
+							uint8_t type = 3;
+							bin.write(reinterpret_cast<const char*>(&type), sizeof(type));
+
+							std::string val = v.get<std::string>();
+							int valSize = val.size();
+							bin.write(reinterpret_cast<const char*>(&valSize), sizeof(valSize));
+							bin.write(val.c_str(), valSize);
+						}
 					}
 					else {
 						uint8_t type = 3;

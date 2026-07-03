@@ -7,6 +7,7 @@ extern "C" {
 #include "vendor/json.hpp"
 #include "game.h"
 #include "sound.h"
+#include "music.h"
 #include "object/object.h"
 #include "room/room.h"
 #include "keyboard/keys.h"
@@ -118,7 +119,16 @@ namespace LuatMathExt {
         lua_pushnumber(L, distance);
         return 1;
     }
+
+    static int Atan2 (lua_State* L) {
+        double y = luaL_checknumber(L, 1);
+        double x = luaL_checknumber(L, 2);
+        float angle = std::atan2(y, x);
+        lua_pushnumber(L, angle);
+        return 1;
+    }
 }
+
 
 void InitializeLuaEnvironment(LuaState& L) {
     {
@@ -144,6 +154,7 @@ void InitializeLuaEnvironment(LuaState& L) {
     lua_pushcfunction(L, LuatMathExt::PointDistance);     lua_setfield(L, -2, "point_distance");
     lua_pushcfunction(L, LuatMathExt::Clamp);             lua_setfield(L, -2, "clamp");
     lua_pushcfunction(L, LuatMathExt::Intersects);        lua_setfield(L, -2, "intersects");
+    lua_pushcfunction(L, LuatMathExt::Atan2);             lua_setfield(L, -2, "atan2");
     lua_pop(L, 1);
 
     lua_newtable(L);
@@ -178,6 +189,7 @@ int main() {
     SoundManager& sndMgr = SoundManager::get();
     sndMgr.thread = std::thread(&SoundManager::update, &sndMgr);
     game.window = std::make_unique<sf::RenderWindow>(sf::VideoMode({ 640, 480 }), "TackEngine");
+    game.window->setVerticalSyncEnabled(false);
     auto& window = game.window;
 
     game.currentRenderer = nullptr;
@@ -201,7 +213,6 @@ int main() {
     refBaseline = refcount;
 
     sf::Clock clock;
-    sf::Clock stupid;
     int fps = 0, frame = 0;
     while (window->isOpen()) {
         while (const std::optional event = window->pollEvent()) {
@@ -245,10 +256,6 @@ int main() {
         game.fps = 1.f / delta;
 
         ++frame;
-
-        if (stupid.getElapsedTime().asSeconds() >= 1) {
-            stupid.restart();
-        }
     }
 
     lua_close(game.L);

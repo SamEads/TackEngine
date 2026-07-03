@@ -66,13 +66,14 @@ inline void lua_unreference(lua_State* L, int ref, const std::string& shorthand)
 }
 
 inline int lua_lazycall(lua_State* L, int argCount, int retCount) {
-    int res = lua_pcall(L, argCount, retCount, 0); // -1 TE
+    int res = lua_pcall(L, argCount, retCount, 0);
+
     if (res != LUA_OK) {
         luaL_traceback(L, L, lua_tostring(L, -1), 1);
-        const char* tb = lua_tostring(L, -1);
-        std::cout << tb << "\n";
-        lua_pop(L, 1);
+        std::cout << "== Lua Error ==" << lua_tostring(L, -1) << "===============\n";
+        lua_pop(L, 2);
     }
+
     return res;
 }
 

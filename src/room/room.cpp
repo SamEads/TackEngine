@@ -217,7 +217,7 @@ void Room::load(int roomIdx) {
             map->MyReference.id = currentId++;
             tilemaps.push_back(map.get());
             map->vectorPos = instances.size();
-            
+
             auto mapPtr = map.get();
             instances.push_back(std::move(map));
             // ids[map->MyReference.id] = mapPtr;
@@ -274,7 +274,7 @@ void Room::load(int roomIdx) {
                     ptr->MyReference.id = objectId;
                     ptr->MyReference.roomId = myId;
                     ptr->MyReference.object = ptr;
-                    
+
                     addQueue.push_back(std::move(o));
                     ids[objectId] = ptr;
                 }
@@ -331,9 +331,9 @@ void Room::load(int roomIdx) {
                             lua_pushinteger(L, val);
                         }
                         else if (type == 2) { // bool
-                            bool val;
+                            uint8_t val;
                             in.read(reinterpret_cast<char*>(&val), sizeof(val));
-                            lua_pushboolean(L, val);
+                            lua_pushboolean(L, val != 0);
                         }
                         else { // other
                             std::string val = readstr();

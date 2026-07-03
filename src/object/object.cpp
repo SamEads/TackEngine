@@ -67,10 +67,10 @@ std::vector<sf::Vector2f> Object::getPoints() const {
         hb = spriteIndex->hitbox;
     }
     sf::Vector2f unscaledCorners[4] = {
-        { hb.position.x, hb.position.y }, // top-left
-        { hb.position.x + hb.size.x, hb.position.y }, // top-right
-        { hb.position.x + hb.size.x, hb.position.y + hb.size.y }, // bottom-right
-        { hb.position.x, hb.position.y + hb.size.y } // bottom-left
+        { hb.position.x, hb.position.y },                           // top-left
+        { hb.position.x + hb.size.x, hb.position.y },               // top-right
+        { hb.position.x + hb.size.x, hb.position.y + hb.size.y },   // bottom-right
+        { hb.position.x, hb.position.y + hb.size.y }                // bottom-left
     };
 
     std::vector<sf::Vector2f> transformed;
@@ -139,7 +139,7 @@ void ObjectManager::registerObject(const std::string &mapIdentifier, int luaRegi
     tilemapObjects[mapIdentifier] = { innerUserdataPointer, luaRegistryRef };
 }
 
-static PropertyType GuessType (const json& v) {
+static PropertyType GuessType(const json& v) {
     if (v.is_number_integer())  return PropertyType::INTEGER;
     if (v.is_number())          return PropertyType::REAL;
     if (v.is_boolean())         return PropertyType::BOOLEAN;

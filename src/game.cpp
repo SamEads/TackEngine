@@ -6,12 +6,13 @@
 #include <SystemInformation.h>
 
 ProcessInfo process;
+
 SystemInformation sys_info;
 #endif
 
 void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
     lua_getglobal(L, ENGINE_ENV);
-    
+
         // WINDOW
         lua_newtable(L);
             lua_pushcfunction(L, [](lua_State* L) -> int {
@@ -74,9 +75,11 @@ void Game::initializeLua(LuaState& L, const std::filesystem::path& assets) {
                 lua_pushnumber(L, 0);
                 return 1;
             });
+
 #endif
+
             lua_setfield(L, -2, "get_memory");
-            
+
             lua_newtable(L);
                 lua_pushcfunction(L, [](lua_State* L) -> int {
                     const char* key = lua_tostring(L, 2);
